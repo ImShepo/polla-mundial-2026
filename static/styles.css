@@ -303,6 +303,9 @@ main {
 .rank-1 .podium-total { color: var(--gold); }
 .podium-breakdown { font-size: 12px; color: var(--text3); }
 .podium-breakdown span { color: var(--text2); font-weight: 500; }
+.podium-card .max-pts-bar { width: 100%; }
+.podium-card .max-pts-track { height: 4px; }
+
 
 /* ===== STATS GRID ===== */
 .stats-grid {

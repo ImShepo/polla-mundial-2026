@@ -504,6 +504,10 @@ function renderLeaderboard() {
     const p = participants[r.name];
     const color = PARTICIPANT_COLORS[r.name];
     const emoji = PARTICIPANT_EMOJIS[r.name];
+    const maxTotal = p.max_total || p.grand_total;
+    const maxExtra = p.max_possible_extra || 0;
+    const maxPct = Math.min(100, Math.round((p.grand_total / Math.max(maxTotal, 1)) * 100));
+
     return `
       <div class="podium-card rank-${i+1}">
         <div class="rank-badge">${i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</div>
@@ -513,6 +517,11 @@ function renderLeaderboard() {
         <div class="podium-breakdown">
           Grupos: <span>${p.group_total}</span> · Playoffs: <span>${p.playoff_total}</span>
         </div>
+        ${maxExtra > 0 ? `<div class="max-pts-bar" style="margin-top:10px">
+          <span class="max-pts-label">Máx: <strong style="color:var(--text)">${maxTotal}pts</strong></span>
+          <div class="max-pts-track"><div class="max-pts-fill" style="width:${maxPct}%"></div></div>
+          <span class="max-pts-value" style="font-size:11px;color:var(--text2)">+${maxExtra} posibles</span>
+        </div>` : `<div style="font-size:11px;color:var(--green);margin-top:8px">✅ Puntos finalizados</div>`}
       </div>`;
   }).join('');
 
