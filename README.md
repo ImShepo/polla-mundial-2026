@@ -38,7 +38,7 @@ Hugo · Oscar · Camilo
 
 ```
 Mundial/
-├── Polla Mundial 2026.xlsx        ← Archivo de datos (NO incluido en Git)
+├── Polla Mundial 2026.xlsx        ← Archivo de datos
 ├── README.md
 └── polla-app/
     ├── app.py                     ← Backend Flask

@@ -4,15 +4,34 @@ Lee las predicciones y resultados del Excel y calcula puntos.
 """
 
 import os
+import sys
+import threading
+import webbrowser
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import openpyxl
 
-app = Flask(__name__, static_folder='static')
+
+def get_base_path():
+    """Ruta base de recursos. Funciona en desarrollo y en bundle PyInstaller."""
+    if getattr(sys, 'frozen', False):
+        return sys._MEIPASS  # carpeta temporal del bundle
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def get_excel_path():
+    """El Excel siempre vive junto al ejecutable (o al script en dev)."""
+    if getattr(sys, 'frozen', False):
+        return os.path.join(os.path.dirname(sys.executable), 'Polla Mundial 2026.xlsx')
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), 'Polla Mundial 2026.xlsx')
+
+
+BASE_PATH = get_base_path()
+EXCEL_PATH = get_excel_path()
+
+app = Flask(__name__, static_folder=os.path.join(BASE_PATH, 'static'))
 CORS(app)
 
-# Ruta al archivo Excel (relativo a este script)
-EXCEL_PATH = os.path.join(os.path.dirname(__file__), 'Polla Mundial 2026.xlsx')
 
 PARTICIPANTS = ['Hugo', 'Oscar', 'Camilo']
 
@@ -667,4 +686,17 @@ def sync_and_reload():
 
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+    IS_FROZEN = getattr(sys, 'frozen', False)
+    PORT = 5001
+
+    if IS_FROZEN:
+        # Ejecutable: abre el browser automaticamente y corre sin debug
+        def open_browser():
+            webbrowser.open(f'http://127.0.0.1:{PORT}')
+        threading.Timer(1.5, open_browser).start()
+        print(f'\n⚽ Polla Mundial 2026 corriendo en http://127.0.0.1:{PORT}')
+        print('   Cierra esta ventana para detener la app.\n')
+        app.run(debug=False, port=PORT)
+    else:
+        # Desarrollo: modo debug normal
+        app.run(debug=True, port=PORT)
