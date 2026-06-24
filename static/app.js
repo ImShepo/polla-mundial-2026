@@ -525,34 +525,9 @@ function renderLeaderboard() {
       </div>`;
   }).join('');
 
-  // Stats grid - tarjetas por participante con proyeccion de max puntos
+  // Stats grid eliminado — la info ya está en las podium cards de arriba
   const statsGrid = document.getElementById('stats-grid');
-  statsGrid.innerHTML = PARTICIPANTS.map(name => {
-    const p = participants[name];
-    const color = PARTICIPANT_COLORS[name];
-    const rank = ranking.findIndex(r => r.name === name) + 1;
-    const rankLabel = rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉';
-    const maxTotal = p.max_total || p.grand_total;
-    const maxExtra = p.max_possible_extra || 0;
-    const maxPct = Math.min(100, Math.round((p.grand_total / Math.max(maxTotal, 1)) * 100));
-
-    return `<div class="stat-card stat-${color}">
-      <div class="stat-header">
-        <span class="stat-rank">${rankLabel}</span>
-        <span class="stat-name">${PARTICIPANT_EMOJIS[name]} ${name}</span>
-        <span class="stat-total">${p.grand_total}pts</span>
-      </div>
-      <div class="stat-breakdown">
-        <div class="stat-item"><span>⚽ Grupos</span><strong>${p.group_total}</strong></div>
-        <div class="stat-item"><span>🎯 Playoffs</span><strong>${p.playoff_total}</strong></div>
-      </div>
-      ${maxExtra > 0 ? `<div class="max-pts-bar">
-        <span class="max-pts-label">Máx: <strong style="color:var(--text)">${maxTotal}pts</strong></span>
-        <div class="max-pts-track"><div class="max-pts-fill" style="width:${maxPct}%"></div></div>
-        <span class="max-pts-value" style="font-size:11px;color:var(--text2)">+${maxExtra} posibles</span>
-      </div>` : '<div style="font-size:11px;color:var(--green)">✅ Todos los puntos finalizados</div>'}
-    </div>`;
-  }).join('');
+  if (statsGrid) statsGrid.innerHTML = '';
 }
 
 // =====================================================
