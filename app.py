@@ -516,10 +516,17 @@ def get_data():
             }
         }
 
-        # Predicciones futuras: lo que cada participante predijo para rondas sin resultado real
+        # Predicciones futuras y predicciones completas de playoffs
         for name in PARTICIPANTS:
             ws_playoffs = wb[f'Playoffs_{name}']
             pred_playoffs = read_playoffs(ws_playoffs)
+
+            # Guardamos TODAS las predicciones de playoff (para el bracket)
+            participants_data[name]['playoff_predictions'] = {
+                ronda: sorted(pred_playoffs.get(ronda, []))
+                for ronda in PLAYOFF_COLUMNS
+            }
+
             future_preds = {}
             for ronda in PLAYOFF_COLUMNS:
                 real_teams = real_playoffs.get(ronda, [])

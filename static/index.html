@@ -25,6 +25,7 @@
       <button class="nav-btn" onclick="showSection('groups')" id="nav-groups">⚽ Grupos</button>
       <button class="nav-btn" onclick="showSection('standings')" id="nav-standings">📊 Tablas</button>
       <button class="nav-btn" onclick="showSection('playoffs')" id="nav-playoffs">🎯 Playoffs</button>
+      <button class="nav-btn" onclick="showSection('bracket')" id="nav-bracket">🔗 Bracket</button>
       <button class="nav-btn" onclick="showSection('detail')" id="nav-detail">📋 Detalle</button>
     </nav>
 
@@ -117,6 +118,17 @@
     <!-- Predicciones futuras -->
     <div id="future-predictions-panel"></div>
     <div class="playoffs-grid" id="playoffs-grid"></div>
+  </div>
+
+  <!-- ===== BRACKET SECTION ===== -->
+  <div class="section" id="section-bracket">
+    <div class="section-title"><span class="icon">🔗</span> Bracket de Eliminación Directa</div>
+    <div id="bracket-legend"></div>
+    <div class="bracket-scroll-wrapper">
+      <div class="bracket-flow" id="bracket-flow"></div>
+    </div>
+    <!-- Tercer puesto separado -->
+    <div id="bracket-third"></div>
   </div>
 
   <!-- ===== DETAIL SECTION ===== -->

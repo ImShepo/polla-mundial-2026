@@ -823,7 +823,215 @@ main {
 .qualified-label { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
 .qualified-sub { font-size: 13px; color: var(--text2); }
 
+/* ===== TOURNAMENT BRACKET ===== */
+.bracket-scroll-wrapper {
+  overflow-x: auto;
+  overflow-y: visible;
+  padding-bottom: 16px;
+  -webkit-overflow-scrolling: touch;
+}
+.bracket-flow {
+  display: flex;
+  gap: 0;
+  align-items: flex-start;
+  min-width: max-content;
+  padding: 8px 0 24px;
+}
+
+/* Column per round */
+.bracket-col {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 160px;
+  max-width: 190px;
+  position: relative;
+}
+.bracket-col-header {
+  text-align: center;
+  padding: 10px 8px 14px;
+  position: sticky;
+  top: 64px;
+  background: var(--bg);
+  z-index: 5;
+}
+.bracket-col-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+.bracket-col-pts {
+  font-size: 10px;
+  color: var(--gold);
+  font-weight: 600;
+  margin-top: 2px;
+}
+.bracket-col-count {
+  font-size: 10px;
+  color: var(--text3);
+  margin-top: 1px;
+}
+.bracket-teams {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 8px;
+}
+
+/* Team card */
+.bracket-team {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  padding: 8px 10px;
+  transition: all 0.2s;
+  position: relative;
+}
+.bracket-team:hover { border-color: var(--border2); transform: translateY(-1px); }
+
+/* States */
+.bracket-team.bt-hit {
+  border-color: rgba(34,197,94,0.5);
+  background: rgba(34,197,94,0.07);
+}
+.bracket-team.bt-miss {
+  border-color: rgba(239,68,68,0.2);
+  background: rgba(239,68,68,0.04);
+  opacity: 0.7;
+}
+.bracket-team.bt-real {
+  border-color: rgba(34,197,94,0.6);
+  background: rgba(34,197,94,0.1);
+  box-shadow: 0 0 12px rgba(34,197,94,0.12);
+}
+.bracket-team.bt-pending {
+  border-color: rgba(245,200,66,0.3);
+  background: rgba(245,200,66,0.04);
+}
+
+.bracket-team-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 5px;
+}
+.bracket-team-name .bt-status {
+  font-size: 11px;
+  margin-left: auto;
+}
+
+/* Participant prediction dots */
+.bracket-preds {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+.bracket-pred-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  opacity: 0.9;
+}
+.bracket-pred-dot.dp-orange { background: var(--hugo); }
+.bracket-pred-dot.dp-blue   { background: var(--oscar); }
+.bracket-pred-dot.dp-purple { background: var(--camilo); }
+.bracket-pred-dot.dp-miss   { background: var(--border2); opacity: 0.5; }
+
+/* Arrow connector between columns */
+.bracket-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  flex-shrink: 0;
+  padding-top: 60px;
+  color: var(--border2);
+  font-size: 18px;
+}
+
+/* Champion column — special */
+.bracket-col.champion-col {
+  min-width: 140px;
+  max-width: 160px;
+}
+.bracket-team.bt-champion {
+  background: linear-gradient(135deg, rgba(245,200,66,0.15), rgba(232,168,0,0.1));
+  border-color: rgba(245,200,66,0.5);
+  box-shadow: 0 0 24px rgba(245,200,66,0.15);
+}
+.bracket-team.bt-champion .bracket-team-name {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--gold);
+}
+
+/* Third place card */
+.bracket-third-section {
+  margin-top: 28px;
+  padding: 18px 20px;
+  background: linear-gradient(135deg, rgba(167,139,250,0.08), rgba(96,165,250,0.06));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.bracket-third-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--purple);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bracket-third-grid {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.bracket-third-grid .bracket-team {
+  min-width: 130px;
+}
+
+/* Legend */
+.bracket-legend {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 20px;
+  font-size: 12px;
+}
+.bracket-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text2);
+}
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.legend-box {
+  width: 14px;
+  height: 10px;
+  border-radius: 2px;
+  border: 1px solid;
+}
+
 /* ===== FUTURE PREDICTIONS PANEL ===== */
+
 .future-panel {
   background: linear-gradient(135deg, rgba(96,165,250,0.06) 0%, rgba(167,139,250,0.06) 100%);
   border: 1px solid rgba(96,165,250,0.2);

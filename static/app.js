@@ -8,7 +8,11 @@ const PARTICIPANT_COLORS = { Hugo: 'hugo', Oscar: 'oscar', Camilo: 'camilo' };
 const PARTICIPANT_EMOJIS = { Hugo: '🦅', Oscar: '⭐', Camilo: '🔥' };
 
 const PLAYOFF_ROUNDS = ['Dieciseisavos', 'Octavos', 'Cuartos', 'Semifinal', 'Tercero', 'Final', 'Campeón'];
-const PLAYOFF_PTS = { Dieciseisavos: 4, Octavos: 6, Cuartos: 8, Semifinal: 10, Tercero: 12, Final: 15, Campeón: 20 };
+const PLAYOFF_PTS = { Dieciseisavos: 4, Octavos: 6, Cuartos: 8, Semifinal: 10, Tercero: 12, Final: 15, 'Campeón': 20 };
+// Orden para el bracket (sin Tercero, que va aparte)
+const BRACKET_ROUNDS = ['Dieciseisavos', 'Octavos', 'Cuartos', 'Semifinal', 'Final', 'Campeón'];
+// Clases de color por participante
+const PARTICIPANT_DOT = { Hugo: 'dp-orange', Oscar: 'dp-blue', Camilo: 'dp-purple' };
 
 let appData = null;
 let currentGroup = 'ALL';
@@ -62,6 +66,7 @@ function renderAll() {
   renderStandings();
   renderPlayoffs();
   renderFuturePredictions();
+  renderBracket();
   renderDetail();
 }
 
@@ -91,6 +96,148 @@ function updateProgressBar() {
 }
 
 // =====================================================
+// TOURNAMENT BRACKET
+// =====================================================
+function renderBracket() {
+  const flow = document.getElementById('bracket-flow');
+  const thirdEl = document.getElementById('bracket-third');
+  const legendEl = document.getElementById('bracket-legend');
+  if (!flow) return;
+
+  const { participants, real_playoffs } = appData;
+  const norm = s => s ? s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim() : '';
+
+  // Build legend
+  if (legendEl) {
+    legendEl.innerHTML = `<div class="bracket-legend">
+      <div class="bracket-legend-item"><span class="legend-dot" style="background:var(--hugo)"></span> Hugo</div>
+      <div class="bracket-legend-item"><span class="legend-dot" style="background:var(--oscar)"></span> Oscar</div>
+      <div class="bracket-legend-item"><span class="legend-dot" style="background:var(--camilo)"></span> Camilo</div>
+      <div class="bracket-legend-item"><span class="legend-box" style="border-color:rgba(34,197,94,0.6);background:rgba(34,197,94,0.1)"></span> Clasificado real</div>
+      <div class="bracket-legend-item"><span class="legend-box" style="border-color:rgba(245,200,66,0.4);background:rgba(245,200,66,0.05)"></span> Pendiente</div>
+      <div class="bracket-legend-item"><span class="legend-box" style="border-color:rgba(239,68,68,0.2);background:rgba(239,68,68,0.04);opacity:0.7"></span> Eliminado</div>
+    </div>`;
+  }
+
+  // Helper: build one column
+  function buildCol(ronda) {
+    const realTeams = (real_playoffs[ronda] || []).map(norm);
+    const hasRealData = realTeams.length > 0;
+    const pts = PLAYOFF_PTS[ronda] || 0;
+    const isChampion = ronda === 'Camp\u00e9on';
+
+    // Gather all unique teams from ALL participants for this round
+    const allTeamsMap = new Map(); // normName → displayName
+    PARTICIPANTS.forEach(name => {
+      const preds = participants[name]?.playoff_predictions?.[ronda] || [];
+      preds.forEach(t => { if (!allTeamsMap.has(norm(t))) allTeamsMap.set(norm(t), t); });
+    });
+    // Also add real teams not in any prediction
+    (real_playoffs[ronda] || []).forEach(t => { if (!allTeamsMap.has(norm(t))) allTeamsMap.set(norm(t), t); });
+
+    // Sort: real first, then alphabetically
+    const allTeams = [...allTeamsMap.entries()].sort((a, b) => {
+      const aReal = realTeams.includes(a[0]) ? 0 : 1;
+      const bReal = realTeams.includes(b[0]) ? 0 : 1;
+      return aReal - bReal || a[1].localeCompare(b[1]);
+    });
+
+    const cards = allTeams.map(([normName, displayName]) => {
+      const isReal = realTeams.includes(normName);
+      // Which participants predicted this team in this round?
+      const predictors = PARTICIPANTS.filter(name =>
+        (participants[name]?.playoff_predictions?.[ronda] || []).some(t => norm(t) === normName)
+      );
+
+      // Determine card state
+      let cardClass = '';
+      if (isChampion) {
+        cardClass = 'bt-champion';
+      } else if (isReal) {
+        cardClass = 'bt-real';
+      } else if (hasRealData && !isReal) {
+        cardClass = 'bt-miss'; // round played, not in real results
+      } else {
+        cardClass = 'bt-pending'; // round not played yet
+      }
+
+      const statusIcon = isReal ? '\u2713' : (hasRealData && !isReal ? '\u2717' : '\u2022');
+      const statusColor = isReal ? 'var(--green)' : (hasRealData ? 'var(--red,#ef4444)' : 'var(--text3)');
+
+      const dots = PARTICIPANTS.map(name => {
+        const predicted = predictors.includes(name);
+        return `<span class="bracket-pred-dot ${predicted ? PARTICIPANT_DOT[name] : 'dp-miss'}" title="${name}: ${predicted ? 'Predijo' : 'No predijo'}"></span>`;
+      }).join('');
+
+      return `<div class="bracket-team ${cardClass}">
+        <div class="bracket-team-name">
+          ${displayName}
+          <span class="bt-status" style="color:${statusColor}">${statusIcon}</span>
+        </div>
+        <div class="bracket-preds">${dots}</div>
+      </div>`;
+    }).join('');
+
+    const teamCount = isChampion ? '' : `${allTeams.length} equipo${allTeams.length !== 1 ? 's' : ''}`;
+    return `<div class="bracket-col ${isChampion ? 'champion-col' : ''}">
+      <div class="bracket-col-header">
+        <div class="bracket-col-label">${ronda}</div>
+        <div class="bracket-col-pts">+${pts}pts c/u</div>
+        ${teamCount ? `<div class="bracket-col-count">${teamCount}</div>` : ''}
+      </div>
+      <div class="bracket-teams">${cards}</div>
+    </div>`;
+  }
+
+  // Build main flow: D16 → Octavos → Cuartos → SF → Final → Campeón
+  const colsHtml = BRACKET_ROUNDS.map((ronda, i) => {
+    const col = buildCol(ronda);
+    const arrow = i < BRACKET_ROUNDS.length - 1
+      ? `<div class="bracket-arrow">\u203a</div>`
+      : '';
+    return col + arrow;
+  }).join('');
+
+  flow.innerHTML = colsHtml;
+
+  // Third place — separate section
+  if (thirdEl) {
+    const realThird = (real_playoffs['Tercero'] || []);
+    const hasThirdData = realThird.length > 0;
+    const allThird = new Map();
+    PARTICIPANTS.forEach(name => {
+      (participants[name]?.playoff_predictions?.['Tercero'] || []).forEach(t => {
+        if (!allThird.has(norm(t))) allThird.set(norm(t), t);
+      });
+    });
+    realThird.forEach(t => { if (!allThird.has(norm(t))) allThird.set(norm(t), t); });
+
+    const thirdCards = [...allThird.entries()].map(([normName, displayName]) => {
+      const isReal = realThird.map(norm).includes(normName);
+      const predictors = PARTICIPANTS.filter(name =>
+        (participants[name]?.playoff_predictions?.['Tercero'] || []).some(t => norm(t) === normName)
+      );
+      const cardClass = isReal ? 'bt-real' : (hasThirdData ? 'bt-miss' : 'bt-pending');
+      const statusIcon = isReal ? '\u2713' : (hasThirdData ? '\u2717' : '\u2022');
+      const statusColor = isReal ? 'var(--green)' : (hasThirdData ? 'var(--red,#ef4444)' : 'var(--text3)');
+      const dots = PARTICIPANTS.map(name => {
+        const predicted = predictors.includes(name);
+        return `<span class="bracket-pred-dot ${predicted ? PARTICIPANT_DOT[name] : 'dp-miss'}" title="${name}"></span>`;
+      }).join('');
+      return `<div class="bracket-team ${cardClass}">
+        <div class="bracket-team-name">${displayName}<span class="bt-status" style="color:${statusColor}">${statusIcon}</span></div>
+        <div class="bracket-preds">${dots}</div>
+      </div>`;
+    }).join('');
+
+    thirdEl.innerHTML = `<div class="bracket-third-section">
+      <div class="bracket-third-title">\ud83e\udd49 Tercer Puesto <span style="color:var(--gold);font-size:10px;font-weight:600">(+12pts)</span></div>
+      <div class="bracket-third-grid">${thirdCards}</div>
+    </div>`;
+  }
+}
+
+// =====================================================
 // FUTURE PREDICTIONS (predicciones para rondas sin resultado)
 // =====================================================
 function renderFuturePredictions() {
@@ -98,17 +245,20 @@ function renderFuturePredictions() {
   if (!el) return;
 
   const participants = appData.participants;
-  const futureRounds = new Set();
+  const futureRoundsSet = new Set();
   PARTICIPANTS.forEach(name => {
-    Object.keys(participants[name]?.future_predictions || {}).forEach(r => futureRounds.add(r));
+    Object.keys(participants[name]?.future_predictions || {}).forEach(r => futureRoundsSet.add(r));
   });
 
-  if (!futureRounds.size) {
+  if (!futureRoundsSet.size) {
     el.innerHTML = '';
     return;
   }
 
-  const cards = [...futureRounds].map(ronda => {
+  // Ordenar según el orden canónico del torneo
+  const orderedRounds = PLAYOFF_ROUNDS.filter(r => futureRoundsSet.has(r));
+
+  const cards = orderedRounds.map(ronda => {
     const pts = PLAYOFF_PTS[ronda] || 0;
     const participantRows = PARTICIPANTS.map(name => {
       const teams = (participants[name]?.future_predictions?.[ronda] || []);
