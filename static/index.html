@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Polla Mundial 2026 🏆</title>
+  <meta name="description" content="Tabla de puntos de la polla del Mundial 2026 - Hugo, Oscar y Camilo" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="header-inner">
+    <a class="logo" href="#">
+      <span class="logo-icon">⚽</span>
+      <div>
+        <div class="logo-text">Polla Mundial 2026</div>
+        <div class="logo-sub">Hugo · Oscar · Camilo</div>
+      </div>
+    </a>
+
+    <nav id="main-nav">
+      <button class="nav-btn active" onclick="showSection('leaderboard')" id="nav-leaderboard">🏆 Posiciones</button>
+      <button class="nav-btn" onclick="showSection('groups')" id="nav-groups">⚽ Grupos</button>
+      <button class="nav-btn" onclick="showSection('standings')" id="nav-standings">📊 Tablas</button>
+      <button class="nav-btn" onclick="showSection('playoffs')" id="nav-playoffs">🎯 Playoffs</button>
+      <button class="nav-btn" onclick="showSection('detail')" id="nav-detail">📋 Detalle</button>
+    </nav>
+
+    <button class="refresh-btn" id="refresh-btn" onclick="syncAndReload()">
+      <span class="refresh-icon" style="display:inline-block">↺</span>
+      Actualizar Todo
+    </button>
+  </div>
+  <!-- Barra de progreso del torneo -->
+  <div id="progress-bar-container">
+    <div id="progress-bar-inner"></div>
+    <span id="progress-bar-label"></span>
+  </div>
+</header>
+
+<!-- MAIN -->
+<main>
+  <div id="loading">
+    <div class="loader"></div>
+    <p>Cargando datos del Excel…</p>
+  </div>
+
+  <div id="error-container"></div>
+
+  <!-- ===== LEADERBOARD SECTION ===== -->
+  <div class="section" id="section-leaderboard">
+    <div class="leaderboard-hero">
+      <div class="leaderboard-title">Tabla de Posiciones</div>
+      <div class="podium" id="podium-container"></div>
+    </div>
+    <div class="stats-grid" id="stats-grid"></div>
+  </div>
+
+  <!-- ===== GROUPS SECTION ===== -->
+  <div class="section" id="section-groups">
+    <div class="section-title"><span class="icon">⚽</span> Partidos de Fase de Grupos</div>
+    <div class="groups-controls" id="group-filters"></div>
+    <div class="table-wrapper">
+      <table class="match-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Grupo</th>
+            <th>Partido</th>
+            <th class="center">Resultado Real</th>
+            <th class="center" colspan="2">Hugo</th>
+            <th class="center" colspan="2">Oscar</th>
+            <th class="center" colspan="2">Camilo</th>
+          </tr>
+          <tr style="background:rgba(0,0,0,0.2)">
+            <th></th><th></th><th></th><th></th>
+            <th class="center" style="font-size:10px;color:var(--text3)">Pred.</th>
+            <th class="center" style="font-size:10px;color:var(--text3)">Pts</th>
+            <th class="center" style="font-size:10px;color:var(--text3)">Pred.</th>
+            <th class="center" style="font-size:10px;color:var(--text3)">Pts</th>
+            <th class="center" style="font-size:10px;color:var(--text3)">Pred.</th>
+            <th class="center" style="font-size:10px;color:var(--text3)">Pts</th>
+          </tr>
+        </thead>
+        <tbody id="groups-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== STANDINGS SECTION ===== -->
+  <div class="section" id="section-standings">
+    <div class="section-title"><span class="icon">📊</span> Tablas de Grupos y Clasificados</div>
+
+    <!-- Info sync -->
+    <div class="sync-banner">
+      <div>
+        <div style="font-size:14px;font-weight:600;margin-bottom:2px">📄 Sincronizar con Excel</div>
+        <div style="font-size:12px;color:var(--text2)">El botón <strong>Actualizar Todo</strong> del header calcula los 32 clasificados al Dieciseisavos, los guarda en <strong>Realidad Playoffs</strong> y recarga toda la app automáticamente.</div>
+      </div>
+    </div>
+
+    <!-- Resumen clasificados -->
+    <div id="qualified-summary"></div>
+
+    <!-- Tabla mejores terceros -->
+    <div id="thirds-table"></div>
+
+    <!-- Tablas por grupo -->
+    <div id="group-standings-grid"></div>
+  </div>
+
+  <!-- ===== PLAYOFFS SECTION ===== -->
+  <div class="section" id="section-playoffs">
+    <div class="section-title"><span class="icon">🎯</span> Fase de Eliminación Directa</div>
+    <!-- Predicciones futuras -->
+    <div id="future-predictions-panel"></div>
+    <div class="playoffs-grid" id="playoffs-grid"></div>
+  </div>
+
+  <!-- ===== DETAIL SECTION ===== -->
+  <div class="section" id="section-detail">
+    <div class="section-title"><span class="icon">📋</span> Detalle por Participante</div>
+    <div class="detail-tabs" id="detail-tabs"></div>
+    <div id="detail-content"></div>
+  </div>
+</main>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
