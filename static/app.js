@@ -107,173 +107,136 @@ function renderBracket() {
   const { participants, real_playoffs } = appData;
   const norm = s => s ? s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim() : '';
 
-  // --- CONSTANTS ---
-  const SH=38, SW=128, IG=6, OFF=SH/2+IG/2; // slot height, width, gap, center offset(22)
-  const CG=22, CW=SW+CG;                      // col gap, col stride(150)
-  const BH=92, N=8, HH=N*BH;                  // D16 match height, matches per half, half height(736)
-  const PT=46;                                 // header padding top
-  const LX=[0,CW,2*CW,3*CW];                  // D16-L, Oct-L, Cuar-L, SF-L  x positions
-  const FX=LX[3]+SW+40;                        // Final x
-  const CX=FX+SW+28;                           // Champion x
-  const CW2=SW+20;                             // champion card width
-  const R0=CX+CW2+40;                          // SF-R x
-  const RX=[R0, R0+CW, R0+2*CW, R0+3*CW];    // SF-R, Cuar-R, Oct-R, D16-R
-  const TW=RX[3]+SW+4, TH=PT+HH+4;
-  const YMID=HH/2;                             // vertical center = 368
-  const LC='rgba(96,165,250,0.32)';
+  // Build legend
+  if (legendEl) {
+    legendEl.innerHTML = `<div class="bracket-legend">
+      <div class="bracket-legend-item"><span class="legend-dot" style="background:var(--hugo)"></span> Hugo</div>
+      <div class="bracket-legend-item"><span class="legend-dot" style="background:var(--oscar)"></span> Oscar</div>
+      <div class="bracket-legend-item"><span class="legend-dot" style="background:var(--camilo)"></span> Camilo</div>
+      <div class="bracket-legend-item"><span class="legend-box" style="border-color:rgba(34,197,94,0.6);background:rgba(34,197,94,0.1)"></span> Clasificado real</div>
+      <div class="bracket-legend-item"><span class="legend-box" style="border-color:rgba(245,200,66,0.4);background:rgba(245,200,66,0.05)"></span> Pendiente</div>
+      <div class="bracket-legend-item"><span class="legend-box" style="border-color:rgba(239,68,68,0.2);background:rgba(239,68,68,0.04);opacity:0.7"></span> Eliminado</div>
+    </div>`;
+  }
 
-  // --- LEGEND ---
-  if (legendEl) legendEl.innerHTML = `<div class="bracket-legend">
-    <div class="bracket-legend-item"><span class="legend-dot" style="background:var(--hugo)"></span> Hugo</div>
-    <div class="bracket-legend-item"><span class="legend-dot" style="background:var(--oscar)"></span> Oscar</div>
-    <div class="bracket-legend-item"><span class="legend-dot" style="background:var(--camilo)"></span> Camilo</div>
-    <div class="bracket-legend-item"><span class="legend-box" style="border-color:rgba(34,197,94,0.6);background:rgba(34,197,94,0.1)"></span> Real ✓</div>
-    <div class="bracket-legend-item"><span class="legend-box" style="border-color:rgba(245,200,66,0.4);background:rgba(245,200,66,0.05)"></span> Pendiente</div>
-    <div class="bracket-legend-item"><span class="legend-box" style="border-color:rgba(239,68,68,0.2);opacity:0.7"></span> Eliminado ✗</div>
-  </div>`;
+  // Helper: build one column
+  function buildCol(ronda) {
+    const realTeams = (real_playoffs[ronda] || []).map(norm);
+    const hasRealData = realTeams.length > 0;
+    const pts = PLAYOFF_PTS[ronda] || 0;
+    const isChampion = ronda === 'Camp\u00e9on';
 
-  // --- TEAM DATA ---
-  const HR={}, RD={};
-  ['Dieciseisavos','Octavos','Cuartos','Semifinal','Final','Campeón','Tercero'].forEach(r => {
-    HR[r] = (real_playoffs[r]||[]).length > 0;
-    const map = new Map();
-    (real_playoffs[r]||[]).forEach(t => { const k=norm(t); map.set(k,{name:t,k,real:true,preds:[]}); });
-    PARTICIPANTS.forEach(pn => {
-      (participants[pn]?.playoff_predictions?.[r]||[]).forEach(t => {
-        const k=norm(t);
-        if (!map.has(k)) map.set(k,{name:t,k,real:false,preds:[]});
-        const d=map.get(k); if (!d.preds.includes(pn)) d.preds.push(pn);
+    // Gather all unique teams from ALL participants for this round
+    const allTeamsMap = new Map(); // normName → displayName
+    PARTICIPANTS.forEach(name => {
+      const preds = participants[name]?.playoff_predictions?.[ronda] || [];
+      preds.forEach(t => { if (!allTeamsMap.has(norm(t))) allTeamsMap.set(norm(t), t); });
+    });
+    // Also add real teams not in any prediction
+    (real_playoffs[ronda] || []).forEach(t => { if (!allTeamsMap.has(norm(t))) allTeamsMap.set(norm(t), t); });
+
+    // Sort: real first, then alphabetically
+    const allTeams = [...allTeamsMap.entries()].sort((a, b) => {
+      const aReal = realTeams.includes(a[0]) ? 0 : 1;
+      const bReal = realTeams.includes(b[0]) ? 0 : 1;
+      return aReal - bReal || a[1].localeCompare(b[1]);
+    });
+
+    const cards = allTeams.map(([normName, displayName]) => {
+      const isReal = realTeams.includes(normName);
+      // Which participants predicted this team in this round?
+      const predictors = PARTICIPANTS.filter(name =>
+        (participants[name]?.playoff_predictions?.[ronda] || []).some(t => norm(t) === normName)
+      );
+
+      // Determine card state
+      let cardClass = '';
+      if (isChampion) {
+        cardClass = 'bt-champion';
+      } else if (isReal) {
+        cardClass = 'bt-real';
+      } else if (hasRealData && !isReal) {
+        cardClass = 'bt-miss'; // round played, not in real results
+      } else {
+        cardClass = 'bt-pending'; // round not played yet
+      }
+
+      const statusIcon = isReal ? '\u2713' : (hasRealData && !isReal ? '\u2717' : '\u2022');
+      const statusColor = isReal ? 'var(--green)' : (hasRealData ? 'var(--red,#ef4444)' : 'var(--text3)');
+
+      const dots = PARTICIPANTS.map(name => {
+        const predicted = predictors.includes(name);
+        return `<span class="bracket-pred-dot ${predicted ? PARTICIPANT_DOT[name] : 'dp-miss'}" title="${name}: ${predicted ? 'Predijo' : 'No predijo'}"></span>`;
+      }).join('');
+
+      return `<div class="bracket-team ${cardClass}">
+        <div class="bracket-team-name">
+          ${displayName}
+          <span class="bt-status" style="color:${statusColor}">${statusIcon}</span>
+        </div>
+        <div class="bracket-preds">${dots}</div>
+      </div>`;
+    }).join('');
+
+    const teamCount = isChampion ? '' : `${allTeams.length} equipo${allTeams.length !== 1 ? 's' : ''}`;
+    return `<div class="bracket-col ${isChampion ? 'champion-col' : ''}">
+      <div class="bracket-col-header">
+        <div class="bracket-col-label">${ronda}</div>
+        <div class="bracket-col-pts">+${pts}pts c/u</div>
+        ${teamCount ? `<div class="bracket-col-count">${teamCount}</div>` : ''}
+      </div>
+      <div class="bracket-teams">${cards}</div>
+    </div>`;
+  }
+
+  // Build main flow: D16 → Octavos → Cuartos → SF → Final → Campeón
+  const colsHtml = BRACKET_ROUNDS.map((ronda, i) => {
+    const col = buildCol(ronda);
+    const arrow = i < BRACKET_ROUNDS.length - 1
+      ? `<div class="bracket-arrow">\u203a</div>`
+      : '';
+    return col + arrow;
+  }).join('');
+
+  flow.innerHTML = colsHtml;
+
+  // Third place — separate section
+  if (thirdEl) {
+    const realThird = (real_playoffs['Tercero'] || []);
+    const hasThirdData = realThird.length > 0;
+    const allThird = new Map();
+    PARTICIPANTS.forEach(name => {
+      (participants[name]?.playoff_predictions?.['Tercero'] || []).forEach(t => {
+        if (!allThird.has(norm(t))) allThird.set(norm(t), t);
       });
     });
-    RD[r]=[...map.values()].sort((a,b)=>{
-      if(a.real!==b.real) return a.real?-1:1;
-      if(a.preds.length!==b.preds.length) return b.preds.length-a.preds.length;
-      return a.name.localeCompare(b.name);
-    });
-  });
-  // Split teams: first matchCount*2 = left half, next = right half
-  function halfT(r, isRight, mc) { const t=RD[r], n=mc*2; return isRight?t.slice(n,n*2):t.slice(0,n); }
+    realThird.forEach(t => { if (!allThird.has(norm(t))) allThird.set(norm(t), t); });
 
-  // --- POSITION MATH ---
-  // D16(ri=0): slot center Y = (m+0.5)*BH ± OFF
-  // Higher rounds: slot center Y = center of feeding D16 match (recursive)
-  function sY(ri,m,s) { return ri===0?(m+0.5)*BH+(s?OFF:-OFF):mY(ri-1,m*2+s); }
-  function mY(ri,m)   { return ri===0?(m+0.5)*BH:(sY(ri,m,0)+sY(ri,m,1))/2; }
-
-  // --- HTML + SVG ---
-  let H='', S='';
-
-  function ln(x1,y1,x2,y2) {
-    S+=`<line x1="${x1.toFixed(1)}" y1="${(y1+PT).toFixed(1)}" x2="${x2.toFixed(1)}" y2="${(y2+PT).toFixed(1)}" stroke="${LC}" stroke-width="1.5" stroke-linecap="round"/>`;
-  }
-
-  function card(team,r,w,champ) {
-    w=w||SW;
-    if (!team) return `<div class="bracket-slot bt-pending" style="height:${SH}px;width:${w}px"><span style="color:var(--text3);font-size:10px">TBD</span></div>`;
-    const isR=team.real, played=HR[r];
-    const cls=champ?'bt-champion':isR?'bt-real':played?'bt-miss':'bt-pending';
-    const ic=isR?'✓':played?'✗':'·', icc=isR?'var(--green)':played?'#ef4444':'var(--text3)';
-    const dots=PARTICIPANTS.map(p=>`<span class="bracket-pred-dot ${team.preds.includes(p)?PARTICIPANT_DOT[p]:'dp-miss'}" title="${p}"></span>`).join('');
-    return `<div class="bracket-slot ${cls}" style="height:${SH}px;width:${w}px">
-      <div class="bracket-team-name" style="font-size:11px">${champ?'🏆 ':''}${team.name}<span style="color:${icc};font-size:9px;margin-left:3px">${ic}</span></div>
-      <div class="bracket-preds">${dots}</div></div>`;
-  }
-
-  function put(x,yc,team,r,w,champ) {
-    H+=`<div style="position:absolute;left:${x.toFixed(1)}px;top:${(yc-SH/2+PT).toFixed(1)}px">${card(team,r,w,champ)}</div>`;
-  }
-
-  function hdr(x,txt,w) {
-    w=w||SW;
-    H+=`<div style="position:absolute;left:${x.toFixed(1)}px;top:0;width:${w}px;height:${PT}px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:6px">
-      <span style="font-size:9px;font-weight:800;letter-spacing:0.5px;text-transform:uppercase;color:var(--text3);text-align:center;line-height:1.3">${txt}</span></div>`;
-  }
-
-  // --- LEFT HALF: D16-L → Oct-L → Cuar-L → SF-L ---
-  ['Dieciseisavos','Octavos','Cuartos','Semifinal'].forEach((ronda,ri) => {
-    const mc=[N,N/2,N/4,1][ri], x=LX[ri];
-    hdr(x,['D16<br>+4pts','Octavos<br>+6pts','Cuartos<br>+8pts','Semis<br>+10pts'][ri]);
-    const teams=halfT(ronda,false,mc);
-    for (let m=0; m<mc; m++) {
-      put(x, sY(ri,m,0), teams[m*2]||null, ronda);
-      put(x, sY(ri,m,1), teams[m*2+1]||null, ronda);
-      // Right-side connector bracket
-      const tY=sY(ri,m,0), bY=sY(ri,m,1), cX=x+SW+CG/2;
-      ln(x+SW,tY,cX,tY); ln(x+SW,bY,cX,bY); ln(cX,tY,cX,bY);
-      // From match center to parent slot in next round
-      if (ri<3) { const pY=sY(ri+1,Math.floor(m/2),m%2); ln(cX,mY(ri,m),LX[ri+1],pY); }
-    }
-  });
-  // SF-L corner midpoint → Final left edge
-  const sfLcX=LX[3]+SW+CG/2;
-  ln(sfLcX,YMID,FX,YMID);
-
-  // --- FINAL ---
-  hdr(FX,'Final<br>+15pts');
-  // Both SF inputs arrive at YMID; split vertically to the two Final team slots
-  ln(FX,YMID,FX,YMID-OFF); ln(FX,YMID,FX,YMID+OFF);
-  put(FX, YMID-OFF, RD['Final'][0]||null, 'Final');
-  put(FX, YMID+OFF, RD['Final'][1]||null, 'Final');
-  // Final right connector → Champion
-  const fCX=FX+SW+14;
-  ln(FX+SW,YMID-OFF,fCX,YMID-OFF); ln(FX+SW,YMID+OFF,fCX,YMID+OFF);
-  ln(fCX,YMID-OFF,fCX,YMID+OFF); ln(fCX,YMID,CX,YMID);
-
-  // --- CHAMPION ---
-  hdr(CX,'🏆 Campeón<br>+20pts',CW2);
-  put(CX, YMID, RD['Campeón'][0]||null, 'Campeón', CW2, true);
-
-  // --- RIGHT HALF: D16-R → Oct-R → Cuar-R → SF-R (displayed SF-R first from center) ---
-  // Column order from center outward: ri=0→SF-R(RX[0]), ri=1→Cuar-R, ri=2→Oct-R, ri=3→D16-R
-  ['Semifinal','Cuartos','Octavos','Dieciseisavos'].forEach((ronda,ri) => {
-    const mc=[1,N/4,N/2,N][ri], x=RX[ri], lri=3-ri;
-    hdr(x,['Semis<br>+10pts','Cuartos<br>+8pts','Octavos<br>+6pts','D16<br>+4pts'][ri]);
-    const teams=halfT(ronda,true,mc);
-    for (let m=0; m<mc; m++) {
-      put(x, sY(lri,m,0), teams[m*2]||null, ronda);
-      put(x, sY(lri,m,1), teams[m*2+1]||null, ronda);
-      // Left-side connector bracket (toward center)
-      const tY=sY(lri,m,0), bY=sY(lri,m,1), cX=x-CG/2;
-      ln(x,tY,cX,tY); ln(x,bY,cX,bY); ln(cX,tY,cX,bY);
-      // From match center to next inward round's slot right edge
-      if (ri>0) { const pY=sY(lri+1,Math.floor(m/2),m%2); ln(cX,mY(lri,m),RX[ri-1]+SW,pY); }
-    }
-  });
-  // SF-R corner midpoint → Final right edge
-  const sfRcX=RX[0]-CG/2;
-  ln(sfRcX,YMID,FX+SW,YMID);
-  // SF-R input: split from right edge of Final
-  ln(FX+SW,YMID,FX+SW,YMID-OFF); ln(FX+SW,YMID,FX+SW,YMID+OFF);
-
-  // --- MOUNT ---
-  const scrollDiv=document.createElement('div');
-  scrollDiv.style.cssText='overflow-x:auto;overflow-y:visible;padding-bottom:8px';
-  scrollDiv.innerHTML=`<div style="position:relative;width:${TW}px;height:${TH}px">
-    <svg style="position:absolute;top:0;left:0;width:${TW}px;height:${TH}px;pointer-events:none;overflow:visible">${S}</svg>
-    ${H}</div>`;
-  flow.innerHTML=''; flow.appendChild(scrollDiv);
-
-  // --- THIRD PLACE ---
-  if (thirdEl) {
-    const rt=real_playoffs['Tercero']||[], tm=new Map();
-    PARTICIPANTS.forEach(pn=>(participants[pn]?.playoff_predictions?.['Tercero']||[]).forEach(t=>{
-      const k=norm(t); if(!tm.has(k))tm.set(k,{name:t,k,real:false,preds:[]});
-      const d=tm.get(k); if(!d.preds.includes(pn))d.preds.push(pn);
-    }));
-    rt.forEach(t=>{const k=norm(t);if(!tm.has(k))tm.set(k,{name:t,k,real:true,preds:[]});else tm.get(k).real=true;});
-    const cards=[...tm.values()].map(team=>{
-      const cls=team.real?'bt-real':HR['Tercero']?'bt-miss':'bt-pending';
-      const ic=team.real?'✓':HR['Tercero']?'✗':'·', icc=team.real?'var(--green)':HR['Tercero']?'#ef4444':'var(--text3)';
-      const dots=PARTICIPANTS.map(p=>`<span class="bracket-pred-dot ${team.preds.includes(p)?PARTICIPANT_DOT[p]:'dp-miss'}" title="${p}"></span>`).join('');
-      return `<div class="bracket-slot ${cls}" style="min-width:120px;height:${SH}px">
-        <div class="bracket-team-name" style="font-size:11px">${team.name}<span style="color:${icc};font-size:9px;margin-left:3px">${ic}</span></div>
-        <div class="bracket-preds">${dots}</div></div>`;
+    const thirdCards = [...allThird.entries()].map(([normName, displayName]) => {
+      const isReal = realThird.map(norm).includes(normName);
+      const predictors = PARTICIPANTS.filter(name =>
+        (participants[name]?.playoff_predictions?.['Tercero'] || []).some(t => norm(t) === normName)
+      );
+      const cardClass = isReal ? 'bt-real' : (hasThirdData ? 'bt-miss' : 'bt-pending');
+      const statusIcon = isReal ? '\u2713' : (hasThirdData ? '\u2717' : '\u2022');
+      const statusColor = isReal ? 'var(--green)' : (hasThirdData ? 'var(--red,#ef4444)' : 'var(--text3)');
+      const dots = PARTICIPANTS.map(name => {
+        const predicted = predictors.includes(name);
+        return `<span class="bracket-pred-dot ${predicted ? PARTICIPANT_DOT[name] : 'dp-miss'}" title="${name}"></span>`;
+      }).join('');
+      return `<div class="bracket-team ${cardClass}">
+        <div class="bracket-team-name">${displayName}<span class="bt-status" style="color:${statusColor}">${statusIcon}</span></div>
+        <div class="bracket-preds">${dots}</div>
+      </div>`;
     }).join('');
-    thirdEl.innerHTML=`<div class="bracket-third-section">
-      <div class="bracket-third-title">🥉 Tercer Puesto <span style="color:var(--gold);font-size:10px">(+12pts)</span></div>
-      <div class="bracket-third-grid">${cards}</div></div>`;
+
+    thirdEl.innerHTML = `<div class="bracket-third-section">
+      <div class="bracket-third-title">\ud83e\udd49 Tercer Puesto <span style="color:var(--gold);font-size:10px;font-weight:600">(+12pts)</span></div>
+      <div class="bracket-third-grid">${thirdCards}</div>
+    </div>`;
   }
 }
+
 
 // =====================================================
 // FUTURE PREDICTIONS (predicciones para rondas sin resultado)
