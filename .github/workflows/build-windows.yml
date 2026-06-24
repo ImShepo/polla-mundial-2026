@@ -1,0 +1,62 @@
+name: Build Windows Executable
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pyinstaller flask openpyxl
+
+      - name: Build executable with PyInstaller
+        run: |
+          pyinstaller `
+            --onefile `
+            --name "Polla Mundial 2026" `
+            --add-data "static;static" `
+            --hidden-import flask `
+            --hidden-import openpyxl `
+            --hidden-import openpyxl.cell._writer `
+            --collect-all openpyxl `
+            app.py
+
+      - name: Upload executable as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Polla-Mundial-2026-Windows
+          path: dist/Polla Mundial 2026.exe
+          retention-days: 30
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main'
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: "Polla Mundial 2026 — Build ${{ github.run_number }}"
+          body: |
+            ## 🏆 Polla Mundial 2026 — Ejecutable Windows
+
+            ### Cómo usarlo:
+            1. Descarga `Polla Mundial 2026.exe`
+            2. Pon el `.exe` en la misma carpeta que el archivo `Polla Mundial 2026.xlsx`
+            3. Doble clic en el `.exe` — se abre el navegador automáticamente
+
+            > ⚠️ Si Windows muestra una advertencia de seguridad, haz clic en "Más información" → "Ejecutar de todas formas"
+          files: dist/Polla Mundial 2026.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
