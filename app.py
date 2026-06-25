@@ -5,6 +5,7 @@ Lee las predicciones y resultados del Excel y calcula puntos.
 
 import os
 import sys
+import io
 import threading
 import webbrowser
 from flask import Flask, jsonify, request
@@ -119,9 +120,26 @@ def normalize_name(name):
     return result
 
 
+EXCEL_LOCKED_MSG = (
+    'No se puede acceder al archivo Excel porque está abierto en otro programa '
+    '(probablemente Microsoft Excel). Guarda los cambios, cierra el archivo y vuelve a intentar.'
+)
+
+
 def load_workbook(data_only=True):
-    """Carga el workbook de Excel."""
-    return openpyxl.load_workbook(EXCEL_PATH, data_only=data_only)
+    """Carga el workbook. Las lecturas usan memoria para no chocar con Excel abierto."""
+    if data_only:
+        try:
+            with open(EXCEL_PATH, 'rb') as f:
+                data = f.read()
+        except PermissionError as exc:
+            raise PermissionError(EXCEL_LOCKED_MSG) from exc
+        return openpyxl.load_workbook(io.BytesIO(data), data_only=True)
+
+    try:
+        return openpyxl.load_workbook(EXCEL_PATH, data_only=False)
+    except PermissionError as exc:
+        raise PermissionError(EXCEL_LOCKED_MSG) from exc
 
 
 def read_group_predictions(ws, max_row=73):
@@ -322,7 +340,10 @@ def write_qualified_to_excel(qualified_teams, best_8_thirds):
     for i, name in enumerate(team_names):
         ws.cell(row=i + 2, column=1, value=name)
 
-    wb.save(EXCEL_PATH)
+    try:
+        wb.save(EXCEL_PATH)
+    except PermissionError as exc:
+        raise PermissionError(EXCEL_LOCKED_MSG) from exc
     return True
 
 
