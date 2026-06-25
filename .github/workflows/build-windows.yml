@@ -21,7 +21,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install pyinstaller flask openpyxl
+          pip install -r requirements.txt pyinstaller
 
       - name: Build executable with PyInstaller
         run: |
@@ -30,6 +30,7 @@ jobs:
             --name "Polla Mundial 2026" `
             --add-data "static;static" `
             --hidden-import flask `
+            --hidden-import flask_cors `
             --hidden-import openpyxl `
             --hidden-import openpyxl.cell._writer `
             --collect-all openpyxl `
@@ -52,12 +53,16 @@ jobs:
             ## 🏆 Polla Mundial 2026 — Ejecutable Windows
 
             ### Cómo usarlo:
-            1. Descarga `Polla Mundial 2026.exe`
-            2. Pon el `.exe` en la misma carpeta que el archivo `Polla Mundial 2026.xlsx`
-            3. Doble clic en el `.exe` — se abre el navegador automáticamente
+            1. Descarga `Polla Mundial 2026.exe` y `Polla Mundial 2026.xlsx`
+            2. Pon ambos archivos en la **misma carpeta**
+            3. Doble clic en el `.exe` — se abre una ventana negra y el navegador automáticamente
 
             > ⚠️ Si Windows muestra una advertencia de seguridad, haz clic en "Más información" → "Ejecutar de todas formas"
-          files: dist/Polla Mundial 2026.exe
+            >
+            > Si no pasa nada al hacer doble clic, abre **Símbolo del sistema**, ve a la carpeta del `.exe` y ejecuta: `"Polla Mundial 2026.exe"`
+          files: |
+            dist/Polla Mundial 2026.exe
+            Polla Mundial 2026.xlsx
           draft: false
           prerelease: false
         env:

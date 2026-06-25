@@ -692,18 +692,36 @@ def sync_and_reload():
         return jsonify({'error': str(e), 'traceback': traceback.format_exc()}), 500
 
 
+def _pause_before_exit():
+    """Mantiene la consola abierta en el .exe para que se lean errores."""
+    if getattr(sys, 'frozen', False):
+        input('\nPresiona Enter para cerrar...')
+
+
 if __name__ == '__main__':
     IS_FROZEN = getattr(sys, 'frozen', False)
     PORT = 5001
 
-    if IS_FROZEN:
-        # Ejecutable: abre el browser automaticamente y corre sin debug
-        def open_browser():
-            webbrowser.open(f'http://127.0.0.1:{PORT}')
-        threading.Timer(1.5, open_browser).start()
-        print(f'\n⚽ Polla Mundial 2026 corriendo en http://127.0.0.1:{PORT}')
-        print('   Cierra esta ventana para detener la app.\n')
-        app.run(debug=False, port=PORT)
-    else:
-        # Desarrollo: modo debug normal
-        app.run(debug=True, port=PORT)
+    try:
+        if IS_FROZEN and not os.path.exists(EXCEL_PATH):
+            print('\nERROR: No se encontró el archivo Excel.')
+            print(f'  Ruta esperada: {EXCEL_PATH}')
+            print('\nColoca "Polla Mundial 2026.xlsx" en la misma carpeta que el .exe.')
+            _pause_before_exit()
+            sys.exit(1)
+
+        if IS_FROZEN:
+            def open_browser():
+                webbrowser.open(f'http://127.0.0.1:{PORT}')
+            threading.Timer(1.5, open_browser).start()
+            print(f'\n⚽ Polla Mundial 2026 corriendo en http://127.0.0.1:{PORT}')
+            print('   Cierra esta ventana para detener la app.\n')
+            app.run(debug=False, port=PORT, use_reloader=False)
+        else:
+            app.run(debug=True, port=PORT)
+    except Exception as e:
+        import traceback
+        print(f'\nERROR al iniciar la app: {e}')
+        traceback.print_exc()
+        _pause_before_exit()
+        sys.exit(1)
