@@ -180,6 +180,172 @@ def read_playoffs(ws):
     return result
 
 
+def read_playoff_matches(ws):
+    """
+    Lee una hoja de partidos de playoff (Realidad Playoffs Predicciones o Playoffs_Predicciones_*).
+    Detecta bloques por título de sección ('PARTIDOS DE XXX') y retorna:
+        { ronda_key: [ {partido, local, visitante, g_local, g_visitante, played}, ... ] }
+    donde ronda_key es el valor de PLAYOFF_DISPLAY_ROUNDS que corresponda.
+    """
+    # Mapa de palabras clave en el título → clave de ronda
+    SECTION_MAP = {
+        'DIECISEISAVOS': 'Dieciseisavos',
+        'OCTAVOS':       'Octavos',
+        'CUARTOS':       'Cuartos',
+        'SEMIFINAL':     'Semifinal',
+        'TERCEROS':      'Tercero',
+        'TERCERO':       'Tercero',
+        'FINAL':         'Final',   # debe ir después de SEMIFINAL
+    }
+    if ws is None:
+        return {}
+
+    result = {}   # { ronda: [matches] }
+    current_ronda = None
+
+    for row in ws.iter_rows(values_only=True):
+        if not row or row[0] is None:
+            continue
+        cell0 = str(row[0]).strip().upper()
+
+        # ¿Es un encabezado de sección?
+        matched_ronda = None
+        for keyword, ronda in SECTION_MAP.items():
+            if keyword in cell0:
+                # Evitar que 'FINAL' capture 'SEMIFINAL'
+                if keyword == 'FINAL' and 'SEMIFINAL' in cell0:
+                    continue
+                matched_ronda = ronda
+                break
+        if matched_ronda:
+            current_ronda = matched_ronda
+            if current_ronda not in result:
+                result[current_ronda] = []
+            continue
+
+        # ¿Es fila de encabezado de columnas?
+        if cell0 in ('PARTIDO', 'PARTIDOS'):
+            continue
+
+        # ¿Es fila de datos?
+        if current_ronda is None:
+            continue
+        try:
+            partido = int(row[0])
+        except (TypeError, ValueError):
+            continue
+
+        local     = str(row[1]).strip() if row[1] is not None else ''
+        visitante = str(row[2]).strip() if row[2] is not None else ''
+        g_local     = int(row[3]) if row[3] is not None else None
+        g_visitante = int(row[4]) if row[4] is not None else None
+        played = g_local is not None and g_visitante is not None
+
+        result[current_ronda].append({
+            'partido':     partido,
+            'local':       local,
+            'visitante':   visitante,
+            'g_local':     g_local,
+            'g_visitante': g_visitante,
+            'played':      played,
+        })
+
+    return result
+
+
+def calculate_playoff_match_points(real, pred):
+    """
+    Calcula GL, GV, Resultado y Diferencia para un partido de playoff.
+    real: dict con g_local, g_visitante, played
+    pred: dict con g_local, g_visitante
+    """
+    zero = {'pts_g_local': 0, 'pts_g_visitante': 0, 'pts_resultado': 0, 'pts_diferencia': 0, 'total': 0}
+    if not real['played'] or pred['g_local'] is None or pred['g_visitante'] is None:
+        return zero
+
+    rl, rv = int(real['g_local']), int(real['g_visitante'])
+    pl, pv = int(pred['g_local']), int(pred['g_visitante'])
+
+    pts_g_local     = 1 if rl == pl else 0
+    pts_g_visitante = 1 if rv == pv else 0
+
+    def resultado(gl, gv):
+        return 'L' if gl > gv else ('E' if gl == gv else 'V')
+
+    pts_resultado  = 1 if resultado(rl, rv) == resultado(pl, pv) else 0
+    pts_diferencia = 1 if (rl - rv) == (pl - pv) else 0
+
+    total = pts_g_local + pts_g_visitante + pts_resultado + pts_diferencia
+    return {
+        'pts_g_local':     pts_g_local,
+        'pts_g_visitante': pts_g_visitante,
+        'pts_resultado':   pts_resultado,
+        'pts_diferencia':  pts_diferencia,
+        'total':           total,
+    }
+
+def heal_real_playoffs(playoffs, matches_by_round):
+    """
+    Rellena los equipos faltantes en las siguientes rondas de playoffs usando los
+    ganadores de los partidos de la ronda anterior, para compensar fórmulas vacías.
+    También rellena local y visitante de los partidos.
+    """
+    def get_winner(match, next_round_teams):
+        if not match.get('played'):
+            return None
+        gl, gv = match.get('g_local'), match.get('g_visitante')
+        if gl is not None and gv is not None:
+            if gl > gv: return match.get('local')
+            if gv > gl: return match.get('visitante')
+        
+        local_n = normalize_name(match.get('local', ''))
+        vis_n = normalize_name(match.get('visitante', ''))
+        for t in next_round_teams:
+            tn = normalize_name(t)
+            if tn == local_n: return match.get('local')
+            if tn == vis_n: return match.get('visitante')
+        return None
+
+    stages = [
+        ('Dieciseisavos', 'Octavos'),
+        ('Octavos', 'Cuartos'),
+        ('Cuartos', 'Semifinal'),
+        ('Semifinal', 'Final'),
+    ]
+    for prev_ronda, next_ronda in stages:
+        prev_matches = matches_by_round.get(prev_ronda, [])
+        next_matches = matches_by_round.get(next_ronda, [])
+        
+        # 1. Sanar local y visitante en los partidos de la siguiente ronda
+        for i, m_next in enumerate(next_matches):
+            p1_idx = i * 2
+            p2_idx = i * 2 + 1
+            if p1_idx < len(prev_matches) and not m_next.get('local'):
+                w1 = get_winner(prev_matches[p1_idx], playoffs.get(next_ronda, []))
+                if w1: m_next['local'] = w1
+            if p2_idx < len(prev_matches) and not m_next.get('visitante'):
+                w2 = get_winner(prev_matches[p2_idx], playoffs.get(next_ronda, []))
+                if w2: m_next['visitante'] = w2
+
+        # 2. Sanar equipos clasificados en playoffs
+        for m in prev_matches:
+            w = get_winner(m, playoffs.get(next_ronda, []))
+            if w and normalize_name(w) not in [normalize_name(t) for t in playoffs.get(next_ronda, [])]:
+                if not playoffs.get(next_ronda):
+                    playoffs[next_ronda] = []
+                playoffs[next_ronda].append(w)
+                    
+    if 'Final' in matches_by_round:
+        for m in matches_by_round['Final']:
+            w = get_winner(m, playoffs.get('Campeón', []))
+            if w and normalize_name(w) not in [normalize_name(t) for t in playoffs.get('Campeón', [])]:
+                if not playoffs.get('Campeón'):
+                    playoffs['Campeón'] = []
+                playoffs['Campeón'].append(w)
+
+    return playoffs, matches_by_round
+
+
 def calculate_group_standings(real_matches):
     """
     Calcula la tabla de posiciones de cada grupo a partir de los partidos jugados.
@@ -475,14 +641,102 @@ def get_data():
         ws_realidad = wb['Realidad']
         real_matches = read_group_predictions(ws_realidad)
 
-        # Leer resultados reales de playoffs
+        # Leer resultados reales de playoffs (equipos que avanzan)
         ws_real_playoffs = wb['Realidad Playoffs']
         real_playoffs = read_playoffs(ws_real_playoffs)
+
+        # Leer resultados reales de partidos de playoff (match-level, por ronda)
+        ws_real_pm = wb['Realidad Playoffs Predicciones'] if 'Realidad Playoffs Predicciones' in wb.sheetnames else None
+        real_playoff_matches_by_round = read_playoff_matches(ws_real_pm)
+        
+        real_playoffs, real_playoff_matches_by_round = heal_real_playoffs(real_playoffs, real_playoff_matches_by_round)
+        
+        # Lista plana con campo 'ronda' (para backward-compat con el frontend)
+        real_playoff_matches = [
+            {**m, 'ronda': ronda}
+            for ronda, matches in real_playoff_matches_by_round.items()
+            for m in matches
+        ]
+        
+        # Indexar por (ronda, partido)
+        real_pm_index = {
+            (m['ronda'], m['partido']): m
+            for m in real_playoff_matches
+        }
 
         # Calcular clasificaciones de grupos
         standings = calculate_group_standings(real_matches)
         best_8, rest_4, all_thirds = get_best_thirds(standings)
         qualified = get_qualified_teams(standings, best_8)
+
+        # Determinar equipos eliminados para no contarlos como pendientes
+        eliminated_from_tournament = set()
+        eliminated_from_final = set()
+        
+        groups_complete = all(g['complete'] for g in standings.values()) if standings else False
+        if groups_complete:
+            qualified_names = {normalize_name(q['equipo']) for q in qualified}
+            for g in standings.values():
+                for t in g['table']:
+                    t_n = normalize_name(t['equipo'])
+                    if t_n not in qualified_names:
+                        eliminated_from_tournament.add(t_n)
+                        
+        for m in real_playoff_matches:
+            if m.get('played'):
+                gl, gv = m.get('g_local'), m.get('g_visitante')
+                if gl is not None and gv is not None:
+                    loser = m.get('visitante') if gl > gv else m.get('local') if gv > gl else None
+                    if loser:
+                        loser_n = normalize_name(loser)
+                        if m['ronda'] == 'Semifinal':
+                            eliminated_from_final.add(loser_n)
+                        else:
+                            eliminated_from_tournament.add(loser_n)
+                            
+        def is_eliminated(team_n, r):
+            if team_n in eliminated_from_tournament:
+                return True
+            if r in ('Final', 'Campeón') and team_n in eliminated_from_final:
+                return True
+            return False
+
+        # Leer predicciones de partidos de playoff por participante (también por ronda)
+        playoff_match_preds = {}
+        for name in PARTICIPANTS:
+            ws_pm = wb[f'Playoffs_Predicciones_{name}'] if f'Playoffs_Predicciones_{name}' in wb.sheetnames else None
+            pm_by_round = read_playoff_matches(ws_pm)
+            # Indexar por (ronda, partido)
+            playoff_match_preds[name] = {
+                (ronda, m['partido']): m
+                for ronda, matches in pm_by_round.items()
+                for m in matches
+            }
+
+        # Ensamblar tabla combinada de partidos de playoff (para sección Grupos)
+        playoff_all_matches = []
+        for rm in real_playoff_matches:
+            ronda = rm['ronda']
+            pid   = rm['partido']
+            entry = {
+                'partido':          pid,
+                'ronda':            ronda,
+                'local':            rm['local'],
+                'visitante':        rm['visitante'],
+                'real_g_local':     rm['g_local'],
+                'real_g_visitante': rm['g_visitante'],
+                'played':           rm['played'],
+                'participants': {},
+            }
+            for name in PARTICIPANTS:
+                pred = playoff_match_preds[name].get((ronda, pid), {'g_local': None, 'g_visitante': None, 'played': False})
+                pts  = calculate_playoff_match_points(rm, pred)
+                entry['participants'][name] = {
+                    'pred_g_local':     pred['g_local'],
+                    'pred_g_visitante': pred['g_visitante'],
+                    **pts,
+                }
+            playoff_all_matches.append(entry)
 
         # Calcular para cada participante
         participants_data = {}
@@ -493,12 +747,42 @@ def get_data():
             ws_playoffs = wb[f'Playoffs_{name}']
             pred_playoffs = read_playoffs(ws_playoffs)
 
+            # Nueva hoja de predicciones detalladas de playoffs (Playoffs_Predicciones_*)
+            ws_playoffs_det_name = f'Playoffs_Predicciones_{name}'
+            pred_playoffs_detailed = None
+            if ws_playoffs_det_name in wb.sheetnames:
+                pred_playoffs_detailed = read_playoffs(wb[ws_playoffs_det_name])
+
             group_details = calculate_group_points(predictions, real_matches)
             playoff_details = calculate_playoff_points(pred_playoffs, real_playoffs)
 
             group_total = sum(m['total'] for m in group_details)
             playoff_total = playoff_details['total']
-            grand_total = group_total + playoff_total
+            
+            # Sum up points from predicting the score of playoff matches
+            participant_pm_index = playoff_match_preds[name]
+            playoff_match_details = []
+            playoff_match_total = 0
+            for rm in real_playoff_matches:
+                ronda = rm['ronda']
+                pid   = rm['partido']
+                pred  = participant_pm_index.get((ronda, pid), {'g_local': None, 'g_visitante': None, 'played': False})
+                pts   = calculate_playoff_match_points(rm, pred)
+                playoff_match_total += pts['total']
+                playoff_match_details.append({
+                    'partido':          pid,
+                    'ronda':            ronda,
+                    'local':            rm['local'],
+                    'visitante':        rm['visitante'],
+                    'real_g_local':     rm['g_local'],
+                    'real_g_visitante': rm['g_visitante'],
+                    'pred_g_local':     pred['g_local'],
+                    'pred_g_visitante': pred['g_visitante'],
+                    'played':           rm['played'],
+                    **pts,
+                })
+
+            grand_total = group_total + playoff_total + playoff_match_total
 
             participants_data[name] = {
                 'group_matches': group_details,
@@ -506,6 +790,8 @@ def get_data():
                 'playoffs': playoff_details,
                 'playoff_total': playoff_total,
                 'grand_total': grand_total,
+                'playoff_detailed_predictions': pred_playoffs_detailed,
+                'playoff_match_details': playoff_match_details,
             }
 
         # Rankings
@@ -522,8 +808,6 @@ def get_data():
         groups_started = sum(1 for g in standings.values() if g['started'])
 
         # Puntos máximos posibles por participante (para rondas no jugadas)
-        # Grupos: max 4pts por partido pendiente
-        # Playoffs: max según equipos que aún no tienen resultado real
         tournament_progress = {
             'total_group_matches': 72,
             'played_group_matches': played_group_matches,
@@ -550,11 +834,34 @@ def get_data():
 
             future_preds = {}
             for ronda in PLAYOFF_COLUMNS:
-                real_teams = real_playoffs.get(ronda, [])
+                real_teams_norm = [normalize_name(t) for t in real_playoffs.get(ronda, [])]
                 pred_teams = pred_playoffs.get(ronda, [])
-                if not real_teams and pred_teams:  # ronda sin resultado real pero con predicción
-                    future_preds[ronda] = sorted(pred_teams)
+                
+                is_round_complete = False
+                if ronda == 'Octavos' and len(real_teams_norm) >= 16: is_round_complete = True
+                elif ronda == 'Cuartos' and len(real_teams_norm) >= 8: is_round_complete = True
+                elif ronda == 'Semifinal' and len(real_teams_norm) >= 4: is_round_complete = True
+                elif ronda == 'Final' and len(real_teams_norm) >= 2: is_round_complete = True
+                elif ronda == 'Campeón' and len(real_teams_norm) >= 1: is_round_complete = True
+                elif ronda == 'Tercero' and len(real_teams_norm) >= 2: is_round_complete = True
+                
+                if not is_round_complete:
+                    pending = []
+                    for t in pred_teams:
+                        t_n = normalize_name(t)
+                        if t_n not in real_teams_norm and not is_eliminated(t_n, ronda):
+                            pending.append(t)
+                    if pending:
+                        future_preds[ronda] = sorted(pending)
             participants_data[name]['future_predictions'] = future_preds
+
+            # Puntos para predicciones detalladas si la hoja existe
+            if participants_data[name].get('playoff_detailed_predictions') is not None:
+                det = participants_data[name]['playoff_detailed_predictions']
+                participants_data[name]['playoff_detailed_predictions'] = {
+                    ronda: sorted(det.get(ronda, []))
+                    for ronda in PLAYOFF_COLUMNS
+                }
 
             # Puntos máximos posibles en grupos (partidos pendientes × 4pts max)
             pending_matches_pts = sum(
@@ -573,6 +880,8 @@ def get_data():
             'ranking': ranking,
             'real_matches': real_matches,
             'real_playoffs': real_playoffs,
+            'real_playoff_matches': real_playoff_matches,
+            'playoff_all_matches': playoff_all_matches,
             'standings': standings,
             'best_8_thirds': best_8,
             'rest_4_thirds': rest_4,
@@ -638,75 +947,14 @@ def sync_and_reload():
             write_qualified_to_excel(qualified, best_8)
             sync_msg = f'{len(qualified)} clasificados guardados en Realidad Playoffs.'
 
-        # Ahora reload completo igual que /api/data pero desde el archivo ya actualizado
-        import importlib, sys
-        # Re-leer todo desde disco
-        wb2 = load_workbook()
-        ws_realidad2 = wb2['Realidad']
-        real_matches2 = read_group_predictions(ws_realidad2)
-        ws_real_playoffs2 = wb2['Realidad Playoffs']
-        real_playoffs2 = read_playoffs(ws_real_playoffs2)
-        standings2 = calculate_group_standings(real_matches2)
-        best_8_2, rest_4_2, all_thirds_2 = get_best_thirds(standings2)
-        qualified2 = get_qualified_teams(standings2, best_8_2)
-
-        played_group_matches = sum(1 for m in real_matches2 if m['g_local'] is not None and m['g_visitante'] is not None)
-        groups_complete = sum(1 for g in standings2.values() if g['complete'])
-        groups_started = sum(1 for g in standings2.values() if g['started'])
-        tournament_progress = {
-            'total_group_matches': 72,
-            'played_group_matches': played_group_matches,
-            'pending_group_matches': 72 - played_group_matches,
-            'groups_complete': groups_complete,
-            'groups_started': groups_started,
-            'groups_total': 12,
-            'group_stage_complete': groups_complete == 12,
-            'real_playoffs_rounds': {ronda: len(real_playoffs2.get(ronda, [])) for ronda in PLAYOFF_COLUMNS}
-        }
-
-        participants_data = {}
-        for name in PARTICIPANTS:
-            ws_pred = wb2[f'Predicciones_{name}']
-            predictions = read_group_predictions(ws_pred)
-            ws_playoffs = wb2[f'Playoffs_{name}']
-            pred_playoffs = read_playoffs(ws_playoffs)
-            group_details = calculate_group_points(predictions, real_matches2)
-            playoff_details = calculate_playoff_points(pred_playoffs, real_playoffs2)
-            group_total = sum(m['total'] for m in group_details)
-            playoff_total = playoff_details['total']
-            grand_total = group_total + playoff_total
-            future_preds = {r: sorted(pred_playoffs.get(r, [])) for r in PLAYOFF_COLUMNS if not real_playoffs2.get(r) and pred_playoffs.get(r)}
-            pending_matches_pts = sum(4 for m in group_details if not m['played'])
-            future_playoff_pts = sum(len(future_preds.get(r, [])) * PLAYOFF_POINTS[r] for r in PLAYOFF_COLUMNS)
-            participants_data[name] = {
-                'group_matches': group_details,
-                'group_total': group_total,
-                'playoffs': playoff_details,
-                'playoff_total': playoff_total,
-                'grand_total': grand_total,
-                'future_predictions': future_preds,
-                'max_possible_extra': pending_matches_pts + future_playoff_pts,
-                'max_total': grand_total + pending_matches_pts + future_playoff_pts,
-            }
-
-        ranking = sorted(
-            [{'name': n, 'total': participants_data[n]['grand_total']} for n in PARTICIPANTS],
-            key=lambda x: x['total'], reverse=True
-        )
-
-        return jsonify({
-            'sync_message': sync_msg,
-            'participants': participants_data,
-            'ranking': ranking,
-            'real_matches': real_matches2,
-            'real_playoffs': real_playoffs2,
-            'standings': standings2,
-            'best_8_thirds': best_8_2,
-            'rest_4_thirds': rest_4_2,
-            'all_thirds': all_thirds_2,
-            'qualified': qualified2,
-            'tournament_progress': tournament_progress,
-        })
+        # Usar la misma logica de get_data
+        res = get_data()
+        if res.status_code == 200:
+            data = res.get_json()
+            data['sync_message'] = sync_msg
+            return jsonify(data)
+        else:
+            return res
 
     except Exception as e:
         import traceback

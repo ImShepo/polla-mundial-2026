@@ -13,11 +13,32 @@ const PLAYOFF_PTS = { Dieciseisavos: 4, Octavos: 6, Cuartos: 8, Semifinal: 10, T
 const BRACKET_ROUNDS = ['Dieciseisavos', 'Octavos', 'Cuartos', 'Semifinal', 'Final', 'Campeón'];
 // Clases de color por participante
 const PARTICIPANT_DOT = { Hugo: 'dp-orange', Oscar: 'dp-blue', Camilo: 'dp-purple' };
+// Íconos por etapa de playoff
+const PLAYOFF_STAGE_ICONS = {
+  'Dieciseisavos': '🎯',
+  'Octavos':       '⚔️',
+  'Cuartos':       '🏹',
+  'Semifinal':     '⚡',
+  'Tercero':       '🥉',
+  'Final':         '🏅',
+};
+// Etapas que aparecen en el detalle (todas las rondas excepto Campeón)
+const PLAYOFF_DISPLAY_ROUNDS = ['Dieciseisavos', 'Octavos', 'Cuartos', 'Semifinal', 'Tercero', 'Final'];
 
 let appData = null;
 let currentGroup = 'ALL';
 let currentDetailParticipant = 'Hugo';
 let searchQuery = '';
+let _stageId = 0;
+
+// Stages that start collapsed (only Fase de Grupos open by default)
+const collapsedStages = new Set();
+
+function toggleStage(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.toggle('collapsed');
+}
 
 // =====================================================
 // DATA LOADING
@@ -98,143 +119,311 @@ function updateProgressBar() {
 // =====================================================
 // TOURNAMENT BRACKET
 // =====================================================
+// ─────────────────────────────────────────────────────────
+// BRACKET — flag emoji mapping (Spanish team names)
+// ─────────────────────────────────────────────────────────
+const TEAM_FLAGS = {
+  'México': '🇲🇽', 'Sudáfrica': '🇿🇦', 'Canadá': '🇨🇦',
+  'Brasil': '🇧🇷', 'Alemania': '🇩🇪', 'Paraguay': '🇵🇾',
+  'Países Bajos': '🇳🇱', 'Marruecos': '🇲🇦', 'Costa de Marfil': '🇨🇮',
+  'Noruega': '🇳🇴', 'Francia': '🇫🇷', 'Suecia': '🇸🇪',
+  'Ecuador': '🇪🇨', 'Inglaterra': '🏴󠁧󠁢󠁥󠁮󠁧󠁿', 'RD Congo': '🇨🇩',
+  'Bélgica': '🇧🇪', 'Senegal': '🇸🇳', 'Estados Unidos': '🇺🇸',
+  'Bosnia y Herzegovina': '🇧🇦', 'España': '🇪🇸', 'Austria': '🇦🇹',
+  'Portugal': '🇵🇹', 'Croacia': '🇭🇷', 'Suiza': '🇨🇭',
+  'Argelia': '🇩🇿', 'Australia': '🇦🇺', 'Egipto': '🇪🇬',
+  'Argentina': '🇦🇷', 'Cabo Verde': '🇨🇻', 'Colombia': '🇨🇴',
+  'Ghana': '🇬🇭', 'Japón': '🇯🇵', 'Corea del Sur': '🇰🇷',
+  'Uruguay': '🇺🇾', 'Chile': '🇨🇱', 'Perú': '🇵🇪',
+  'Irán': '🇮🇷', 'Arabia Saudita': '🇸🇦', 'Qatar': '🇶🇦',
+  'Dinamarca': '🇩🇰', 'Polonia': '🇵🇱', 'Serbia': '🇷🇸',
+  'Gales': '🏴󠁧󠁢󠁷󠁬󠁳󠁿', 'Escocia': '🏴󠁧󠁢󠁳󠁣󠁴󠁿', 'Haití': '🇭🇹',
+  'República Checa': '🇨🇿', 'Hungría': '🇭🇺',
+  'Bielorrusia': '🇧🇾', 'Guinea': '🇬🇳', 'Camerún': '🇨🇲',
+  'Nigeria': '🇳🇬', 'Túnez': '🇹🇳',
+};
+
 function renderBracket() {
-  const flow = document.getElementById('bracket-flow');
-  const thirdEl = document.getElementById('bracket-third');
+  const flow     = document.getElementById('bracket-flow');
+  const thirdEl  = document.getElementById('bracket-third');
   const legendEl = document.getElementById('bracket-legend');
   if (!flow) return;
 
-  const { participants, real_playoffs } = appData;
+  const { participants, real_playoffs, real_playoff_matches } = appData;
+
+  // ── helpers ─────────────────────────────────────────────────────────
   const norm = s => s ? s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim() : '';
 
-  // Build legend
-  if (legendEl) {
-    legendEl.innerHTML = `<div class="bracket-legend">
-      <div class="bracket-legend-item"><span class="legend-dot" style="background:var(--hugo)"></span> Hugo</div>
-      <div class="bracket-legend-item"><span class="legend-dot" style="background:var(--oscar)"></span> Oscar</div>
-      <div class="bracket-legend-item"><span class="legend-dot" style="background:var(--camilo)"></span> Camilo</div>
-      <div class="bracket-legend-item"><span class="legend-box" style="border-color:rgba(34,197,94,0.6);background:rgba(34,197,94,0.1)"></span> Clasificado real</div>
-      <div class="bracket-legend-item"><span class="legend-box" style="border-color:rgba(245,200,66,0.4);background:rgba(245,200,66,0.05)"></span> Pendiente</div>
-      <div class="bracket-legend-item"><span class="legend-box" style="border-color:rgba(239,68,68,0.2);background:rgba(239,68,68,0.04);opacity:0.7"></span> Eliminado</div>
-    </div>`;
+  // Who advances each round (from Realidad Playoffs)
+  const realByRound = {};
+  ['Dieciseisavos','Octavos','Cuartos','Semifinal','Tercero','Final','Campeón'].forEach(r => {
+    realByRound[r] = new Set((real_playoffs[r] || []).map(norm));
+  });
+
+  // Matches grouped by round (from Realidad Playoffs Predicciones)
+  const matchesByRound = {};
+  (real_playoff_matches || []).forEach(m => {
+    if (!matchesByRound[m.ronda]) matchesByRound[m.ronda] = [];
+    matchesByRound[m.ronda].push(m);
+  });
+
+  // Prediction data per participant per round
+  function predStatus(team, ronda, participant) {
+    const rd = participants[participant]?.playoffs?.por_ronda?.[ronda];
+    if (!rd) return 'none';
+    const t = norm(team);
+    if ((rd.acertados || []).some(x => norm(x) === t)) return 'hit';
+    if ((rd.predichos || []).some(x => norm(x) === t)) return 'pred';
+    return 'none';
   }
 
-  // Helper: build one column
-  function buildCol(ronda) {
-    const realTeams = (real_playoffs[ronda] || []).map(norm);
-    const hasRealData = realTeams.length > 0;
-    const pts = PLAYOFF_PTS[ronda] || 0;
-    const isChampion = ronda === 'Camp\u00e9on';
+  // Winner of a match:
+  // 1. Compare goals directly (most reliable — no dependency on other sheets)
+  // 2. Fallback: check who appeared in the next round (handles penalties / missing scores)
+  function matchWinner(m, nextRonda) {
+    if (!m.played) return null;
+    const gl = m.g_local, gv = m.g_visitante;
+    if (gl !== null && gl !== undefined && gv !== null && gv !== undefined) {
+      if (gl > gv) return m.local;
+      if (gv > gl) return m.visitante;
+      // Draw → must have gone to penalties; use next-round presence as tiebreaker
+    }
+    if (!nextRonda) return null;
+    const nextTeams = realByRound[nextRonda] || new Set();
+    if (nextTeams.has(norm(m.local)))     return m.local;
+    if (nextTeams.has(norm(m.visitante))) return m.visitante;
+    return null; // can't determine yet
+  }
 
-    // Gather all unique teams from ALL participants for this round
-    const allTeamsMap = new Map(); // normName → displayName
-    PARTICIPANTS.forEach(name => {
-      const preds = participants[name]?.playoff_predictions?.[ronda] || [];
-      preds.forEach(t => { if (!allTeamsMap.has(norm(t))) allTeamsMap.set(norm(t), t); });
-    });
-    // Also add real teams not in any prediction
-    (real_playoffs[ronda] || []).forEach(t => { if (!allTeamsMap.has(norm(t))) allTeamsMap.set(norm(t), t); });
-
-    // Sort: real first, then alphabetically
-    const allTeams = [...allTeamsMap.entries()].sort((a, b) => {
-      const aReal = realTeams.includes(a[0]) ? 0 : 1;
-      const bReal = realTeams.includes(b[0]) ? 0 : 1;
-      return aReal - bReal || a[1].localeCompare(b[1]);
-    });
-
-    const cards = allTeams.map(([normName, displayName]) => {
-      const isReal = realTeams.includes(normName);
-      // Which participants predicted this team in this round?
-      const predictors = PARTICIPANTS.filter(name =>
-        (participants[name]?.playoff_predictions?.[ronda] || []).some(t => norm(t) === normName)
-      );
-
-      // Determine card state
-      let cardClass = '';
-      if (isChampion) {
-        cardClass = 'bt-champion';
-      } else if (isReal) {
-        cardClass = 'bt-real';
-      } else if (hasRealData && !isReal) {
-        cardClass = 'bt-miss'; // round played, not in real results
-      } else {
-        cardClass = 'bt-pending'; // round not played yet
-      }
-
-      const statusIcon = isReal ? '\u2713' : (hasRealData && !isReal ? '\u2717' : '\u2022');
-      const statusColor = isReal ? 'var(--green)' : (hasRealData ? 'var(--red,#ef4444)' : 'var(--text3)');
-
-      const dots = PARTICIPANTS.map(name => {
-        const predicted = predictors.includes(name);
-        return `<span class="bracket-pred-dot ${predicted ? PARTICIPANT_DOT[name] : 'dp-miss'}" title="${name}: ${predicted ? 'Predijo' : 'No predijo'}"></span>`;
-      }).join('');
-
-      return `<div class="bracket-team ${cardClass}">
-        <div class="bracket-team-name">
-          ${displayName}
-          <span class="bt-status" style="color:${statusColor}">${statusIcon}</span>
-        </div>
-        <div class="bracket-preds">${dots}</div>
-      </div>`;
+  // Render one team slot inside a match
+  function teamSlot(team, ronda, isWinner, isLoser, score = null) {
+    if (!team) return `<div class="bk-team bk-unknown"><span>?</span></div>`;
+    const flag  = TEAM_FLAGS[team] || '🏳️';
+    const cls   = isWinner ? 'bk-winner' : isLoser ? 'bk-loser' : '';
+    const badges = PARTICIPANTS.map(name => {
+      const s = predStatus(team, ronda, name);
+      return `<span class="bk-badge bk-badge-${s} bk-badge-${PARTICIPANT_COLORS[name]}"
+        title="${name}: ${s === 'hit' ? '✅ acertó' : s === 'pred' ? '🟡 predijo' : '➖ no predijo'}"
+      >${PARTICIPANT_EMOJIS[name]}</span>`;
     }).join('');
-
-    const teamCount = isChampion ? '' : `${allTeams.length} equipo${allTeams.length !== 1 ? 's' : ''}`;
-    return `<div class="bracket-col ${isChampion ? 'champion-col' : ''}">
-      <div class="bracket-col-header">
-        <div class="bracket-col-label">${ronda}</div>
-        <div class="bracket-col-pts">+${pts}pts c/u</div>
-        ${teamCount ? `<div class="bracket-col-count">${teamCount}</div>` : ''}
+    const scoreHtml = score !== null ? `<span class="bk-score ${isWinner ? 'bk-score-win' : isLoser ? 'bk-score-lose' : ''}">${score}</span>` : '';
+    return `<div class="bk-team ${cls}">
+      <div class="bk-team-flag-row">
+        <span class="bk-flag">${flag}</span>
+        ${scoreHtml}
+        ${isWinner ? '<span class="bk-win-arrow">›</span>' : ''}
       </div>
-      <div class="bracket-teams">${cards}</div>
+      <div class="bk-team-name-row"><span class="bk-name">${team}</span></div>
+      <div class="bk-badges">${badges}</div>
     </div>`;
   }
 
-  // Build main flow: D16 → Octavos → Cuartos → SF → Final → Campeón
-  const colsHtml = BRACKET_ROUNDS.map((ronda, i) => {
-    const col = buildCol(ronda);
-    const arrow = i < BRACKET_ROUNDS.length - 1
-      ? `<div class="bracket-arrow">\u203a</div>`
-      : '';
-    return col + arrow;
-  }).join('');
+  // Render one match pair
+  function matchPair(m, ronda, nextRonda, cls = '') {
+    if (!m) return `<div class="bk-match ${cls}">
+      ${teamSlot(null, ronda, false, false)}
+      ${teamSlot(null, ronda, false, false)}
+    </div>`;
+    const winner    = matchWinner(m, nextRonda);
+    const localWins = winner !== null && norm(winner) === norm(m.local);
+    const visWins   = winner !== null && norm(winner) === norm(m.visitante);
+    // Only mark as loser when we know who won — avoids dimming both teams
+    const localLoses = winner !== null && m.played && !localWins;
+    const visLoses   = winner !== null && m.played && !visWins;
+    const scoreL = m.played && m.g_local     != null ? m.g_local     : null;
+    const scoreV = m.played && m.g_visitante != null ? m.g_visitante : null;
+    return `<div class="bk-match ${cls}">
+      ${teamSlot(m.local,     ronda, localWins, localLoses, scoreL)}
+      ${teamSlot(m.visitante, ronda, visWins,   visLoses,   scoreV)}
+    </div>`;
+  }
 
-  flow.innerHTML = colsHtml;
-
-  // Third place — separate section
-  if (thirdEl) {
-    const realThird = (real_playoffs['Tercero'] || []);
-    const hasThirdData = realThird.length > 0;
-    const allThird = new Map();
-    PARTICIPANTS.forEach(name => {
-      (participants[name]?.playoff_predictions?.['Tercero'] || []).forEach(t => {
-        if (!allThird.has(norm(t))) allThird.set(norm(t), t);
-      });
-    });
-    realThird.forEach(t => { if (!allThird.has(norm(t))) allThird.set(norm(t), t); });
-
-    const thirdCards = [...allThird.entries()].map(([normName, displayName]) => {
-      const isReal = realThird.map(norm).includes(normName);
-      const predictors = PARTICIPANTS.filter(name =>
-        (participants[name]?.playoff_predictions?.['Tercero'] || []).some(t => norm(t) === normName)
-      );
-      const cardClass = isReal ? 'bt-real' : (hasThirdData ? 'bt-miss' : 'bt-pending');
-      const statusIcon = isReal ? '\u2713' : (hasThirdData ? '\u2717' : '\u2022');
-      const statusColor = isReal ? 'var(--green)' : (hasThirdData ? 'var(--red,#ef4444)' : 'var(--text3)');
-      const dots = PARTICIPANTS.map(name => {
-        const predicted = predictors.includes(name);
-        return `<span class="bracket-pred-dot ${predicted ? PARTICIPANT_DOT[name] : 'dp-miss'}" title="${name}"></span>`;
-      }).join('');
-      return `<div class="bracket-team ${cardClass}">
-        <div class="bracket-team-name">${displayName}<span class="bt-status" style="color:${statusColor}">${statusIcon}</span></div>
-        <div class="bracket-preds">${dots}</div>
-      </div>`;
+  // Render a single-team winner advancing slot (for Octavos→Cuartos etc.)
+  function winnerSlot(team, ronda, nextRonda) {
+    if (!team) return `<div class="bk-winner-slot bk-unknown"><span>?</span></div>`;
+    const flag  = TEAM_FLAGS[team] || '🏳️';
+    const isAdvancing = nextRonda ? realByRound[nextRonda]?.has(norm(team)) : false;
+    const isElim       = !isAdvancing && realByRound[ronda]?.has(norm(team)) && nextRonda && realByRound[nextRonda]?.size > 0;
+    const cls   = isAdvancing ? 'bk-advancing' : isElim ? 'bk-eliminated' : '';
+    const badges = PARTICIPANTS.map(name => {
+      const s = predStatus(team, ronda, name);
+      return `<span class="bk-badge bk-badge-${s} bk-badge-${PARTICIPANT_COLORS[name]}"
+        title="${name}: ${s === 'hit' ? '✅ acertó' : s === 'pred' ? '🟡 predijo' : '➖ no predijo'}"
+      >${PARTICIPANT_EMOJIS[name]}</span>`;
     }).join('');
-
-    thirdEl.innerHTML = `<div class="bracket-third-section">
-      <div class="bracket-third-title">\ud83e\udd49 Tercer Puesto <span style="color:var(--gold);font-size:10px;font-weight:600">(+12pts)</span></div>
-      <div class="bracket-third-grid">${thirdCards}</div>
+    return `<div class="bk-winner-slot ${cls}">
+      <span class="bk-flag">${flag}</span>
+      <span class="bk-name">${team}</span>
+      <div class="bk-badges">${badges}</div>
     </div>`;
   }
+
+  // ── Build bracket halves ──────────────────────────────────────────────
+  const r32 = matchesByRound['Dieciseisavos'] || [];
+  const r16 = matchesByRound['Octavos']       || [];
+  const qf  = matchesByRound['Cuartos']       || [];
+  const sf  = matchesByRound['Semifinal']     || [];
+  const bronzeMatches = matchesByRound['Tercero'] || [];
+  const finalMatches  = matchesByRound['Final']   || [];
+
+  // Left half: matches 1-8 (indices 0-7)
+  // Right half: matches 9-16 (indices 8-15)
+  const r32L = r32.slice(0, 8);
+  const r32R = r32.slice(8, 16);
+  const r16L = r16.slice(0, 4);
+  const r16R = r16.slice(4, 8);
+  const qfL  = qf.slice(0, 2);
+  const qfR  = qf.slice(2, 4);
+  const sfL  = sf.slice(0, 1)[0] || null;
+  const sfR  = sf.slice(1, 2)[0] || null;
+  const bronzeMatch = bronzeMatches[0] || null;
+  const finalMatch  = finalMatches[0]  || null;
+
+  // ── Derive missing team names from previous-round winners ────────────
+  // If Excel formula cache is empty, auto-populate from known results.
+  function getWinner(prevMatches, idx, prevRonda) {
+    const m = prevMatches[idx];
+    return m ? matchWinner(m, prevRonda) : null;
+  }
+  function fillTeams(matches, prevMatches, prevRonda) {
+    return matches.map((m, i) => {
+      if (!m) return m;
+      let local     = m.local     || getWinner(prevMatches, i * 2,     prevRonda);
+      let visitante = m.visitante || getWinner(prevMatches, i * 2 + 1, prevRonda);
+      return {...m, local: local || '', visitante: visitante || ''};
+    });
+  }
+
+  const r16L_f = fillTeams(r16L, r32L, 'Dieciseisavos');
+  const r16R_f = fillTeams(r16R, r32R, 'Dieciseisavos');
+  const qfL_f  = fillTeams(qfL,  r16L_f, 'Octavos');
+  const qfR_f  = fillTeams(qfR,  r16R_f, 'Octavos');
+  const sfL_f  = sfL ? (sfL.local && sfL.visitante ? sfL : {
+    ...sfL,
+    local:     sfL.local     || getWinner(qfL_f, 0, 'Cuartos'),
+    visitante: sfL.visitante || getWinner(qfL_f, 1, 'Cuartos'),
+  }) : null;
+  const sfR_f  = sfR ? (sfR.local && sfR.visitante ? sfR : {
+    ...sfR,
+    local:     sfR.local     || getWinner(qfR_f, 0, 'Cuartos'),
+    visitante: sfR.visitante || getWinner(qfR_f, 1, 'Cuartos'),
+  }) : null;
+
+  // ── Helper: build a column of matches ────────────────────────────────
+  function buildMatchColumn(matches, ronda, nextRonda, label, pts, colCls = '') {
+    const pairs = matches.map(m => matchPair(m, ronda, nextRonda)).join('');
+    return `<div class="bk-col ${colCls}">
+      <div class="bk-col-hdr"><span class="bk-col-label">${label}</span><span class="bk-col-pts">${pts}pts/eq</span></div>
+      <div class="bk-col-matches">${pairs}</div>
+    </div>`;
+  }
+
+  // ── Build champion / final center slot ───────────────────────────────
+  const champion = [...realByRound['Campeón']][0] || null;
+  const finalWinner = finalMatch ? matchWinner(finalMatch, 'Campeón') : null;
+
+  function centerSlot(team, ronda, label, pts, isChamp = false) {
+    if (!team) return `<div class="bk-center-slot bk-unknown ${isChamp ? 'bk-champ-slot' : ''}">
+      <span class="bk-center-label">${label}</span>
+      <span class="bk-question">?</span>
+      <span class="bk-center-pts">${pts}pts</span>
+    </div>`;
+    const flag = TEAM_FLAGS[team] || '🏳️';
+    const badges = PARTICIPANTS.map(name => {
+      const s = predStatus(team, ronda, name);
+      return `<span class="bk-badge bk-badge-${s} bk-badge-${PARTICIPANT_COLORS[name]}" title="${name}">${PARTICIPANT_EMOJIS[name]}</span>`;
+    }).join('');
+    return `<div class="bk-center-slot ${isChamp ? 'bk-champ-slot bk-champ-filled' : 'bk-final-team'}">
+      <span class="bk-center-label">${label}</span>
+      <span class="bk-flag bk-flag-lg">${flag}</span>
+      <span class="bk-name">${team}</span>
+      <div class="bk-badges">${badges}</div>
+      ${isChamp ? '<span class="bk-trophy">🏆</span>' : ''}
+    </div>`;
+  }
+
+  // ── SF single-match column ────────────────────────────────────────────
+  function sfColumn(match, side) {
+    if (!match) return `<div class="bk-col bk-sf-col bk-sf-${side}">
+      <div class="bk-col-hdr"><span class="bk-col-label">Semifinal</span><span class="bk-col-pts">10pts/eq</span></div>
+      <div class="bk-col-matches">${matchPair(null,'Semifinal','Final')}</div>
+    </div>`;
+    const winner     = matchWinner(match, 'Final');
+    const localWins  = winner !== null && norm(winner) === norm(match.local);
+    const visWins    = winner !== null && norm(winner) === norm(match.visitante);
+    const localLoses = winner !== null && match.played && !localWins;
+    const visLoses   = winner !== null && match.played && !visWins;
+    const scoreL = match.played && match.g_local     != null ? match.g_local     : null;
+    const scoreV = match.played && match.g_visitante != null ? match.g_visitante : null;
+    return `<div class="bk-col bk-sf-col bk-sf-${side}">
+      <div class="bk-col-hdr"><span class="bk-col-label">Semifinal</span><span class="bk-col-pts">10pts/eq</span></div>
+      <div class="bk-col-matches">
+        <div class="bk-match">
+          ${teamSlot(match.local,     'Semifinal', localWins, localLoses, scoreL)}
+          ${teamSlot(match.visitante, 'Semifinal', visWins,   visLoses,   scoreV)}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // ── Assemble left side ────────────────────────────────────────────────
+  const leftHtml = `<div class="bk-half bk-half-left">
+    ${buildMatchColumn(r32L,   'Dieciseisavos', 'Octavos',  '16vos de Final',   4, 'bk-r32')}
+    ${buildMatchColumn(r16L_f, 'Octavos',       'Cuartos',  'Octavos de Final', 6, 'bk-r16')}
+    ${buildMatchColumn(qfL_f,  'Cuartos',       'Semifinal','Cuartos de Final', 8, 'bk-qf')}
+    ${sfColumn(sfL_f, 'left')}
+  </div>`;
+
+  // ── Assemble center ───────────────────────────────────────────────────
+  const finalLocalWins  = finalMatch ? (finalWinner && norm(finalWinner) === norm(finalMatch.local)) : false;
+  const finalVisWins    = finalMatch ? (finalWinner && norm(finalWinner) === norm(finalMatch.visitante)) : false;
+
+  const centerHtml = `<div class="bk-center">
+    <div class="bk-center-title">🏆 Final</div>
+    <div class="bk-final-match">
+      ${teamSlot(finalMatch?.local,     'Final', finalLocalWins, finalMatch?.played && !finalLocalWins)}
+      ${teamSlot(finalMatch?.visitante, 'Final', finalVisWins,   finalMatch?.played && !finalVisWins)}
+    </div>
+    ${centerSlot(champion, 'Campeón', '🌟 Campeón Mundial', '20', true)}
+    <div class="bk-bronze-divider">
+      <span>🥉 Partido por el 3er puesto</span>
+      <span class="bk-col-pts">12pts/eq</span>
+    </div>
+    <div class="bk-bronze-match">
+      ${matchPair(bronzeMatch, 'Tercero', null, 'bk-bronze')}
+    </div>
+  </div>`;
+
+  // ── Assemble right side (reversed columns) ────────────────────────────
+  const rightHtml = `<div class="bk-half bk-half-right">
+    ${sfColumn(sfR_f, 'right')}
+    ${buildMatchColumn(qfR_f,  'Cuartos',       'Semifinal','Cuartos de Final', 8, 'bk-qf')}
+    ${buildMatchColumn(r16R_f, 'Octavos',       'Cuartos',  'Octavos de Final', 6, 'bk-r16')}
+    ${buildMatchColumn(r32R,   'Dieciseisavos', 'Octavos',  '16vos de Final',   4, 'bk-r32')}
+  </div>`;
+
+  // ── Legend ─────────────────────────────────────────────────────────────
+  if (legendEl) {
+    const participantRows = PARTICIPANTS.map(n => `
+      <tr>
+        <td class="bk-leg-name">${PARTICIPANT_EMOJIS[n]} ${n}</td>
+        <td><span class="bk-badge bk-badge-hit bk-badge-${PARTICIPANT_COLORS[n]}" style="width:16px;height:16px;font-size:9px">${PARTICIPANT_EMOJIS[n]}</span> <span class="bk-leg-lbl">Acertó</span></td>
+        <td><span class="bk-badge bk-badge-pred bk-badge-${PARTICIPANT_COLORS[n]}" style="width:16px;height:16px;font-size:9px">${PARTICIPANT_EMOJIS[n]}</span> <span class="bk-leg-lbl">Predijo</span></td>
+      </tr>`).join('');
+
+    legendEl.innerHTML = `<div class="bk-legend-wrap">
+      <div class="bk-legend-misc">
+        <span><span class="bk-win-arrow">›</span> Avanzó</span>
+        <span><span class="bk-loser-eliminated">Eliminado</span></span>
+      </div>
+      <table class="bk-legend-table">
+        <tbody>${participantRows}</tbody>
+      </table>
+    </div>`;
+  }
+
+  flow.innerHTML = leftHtml + centerHtml + rightHtml;
+  if (thirdEl) thirdEl.innerHTML = '';
 }
 
 
@@ -495,10 +684,43 @@ async function syncPlayoffs() {
 // =====================================================
 // LEADERBOARD
 // =====================================================
+
+// Compute per-stage points for a participant
+function getStageBreakdown(p) {
+  const stages = [];
+
+  // Groups
+  stages.push({
+    key: 'grupos', label: 'Grupos', icon: '⚽',
+    pts: p.group_total || 0, sub: null,
+  });
+
+  // Playoff rounds — filter match details by ronda field (works for all rounds)
+  PLAYOFF_DISPLAY_ROUNDS.forEach(ronda => {
+    const rd = p.playoffs?.por_ronda?.[ronda];
+    const teamPts = rd?.total_ronda || 0;
+    // Match-level pts for this round — filter by ronda field from API
+    const matchPts = (p.playoff_match_details || [])
+      .filter(m => m.ronda === ronda)
+      .reduce((s, m) => s + (m.total || 0), 0);
+    const total = teamPts + matchPts;
+    const subs = [];
+    if (matchPts > 0) subs.push(`Partidos: +${matchPts}`);
+    if (teamPts > 0)  subs.push(`Equipos: +${teamPts}`);
+    stages.push({
+      key: ronda, label: ronda, icon: PLAYOFF_STAGE_ICONS[ronda] || '🎯',
+      pts: total, sub: subs.length ? subs.join(' · ') : null,
+      pending: !rd || (!rd.reales?.length),
+    });
+  });
+
+  return stages;
+}
+
 function renderLeaderboard() {
   const { ranking, participants } = appData;
 
-  // Podium
+  // ── Podium cards ─────────────────────────────────────────────
   const podium = document.getElementById('podium-container');
   podium.innerHTML = ranking.map((r, i) => {
     const p = participants[r.name];
@@ -508,27 +730,176 @@ function renderLeaderboard() {
     const maxExtra = p.max_possible_extra || 0;
     const maxPct = Math.min(100, Math.round((p.grand_total / Math.max(maxTotal, 1)) * 100));
 
+    // Mini stage bars inside podium card
+    const stages = getStageBreakdown(p);
+    const maxStagePts = Math.max(...stages.map(s => s.pts), 1);
+    const stageMini = stages
+      .filter(s => s.pts > 0 || !s.pending)
+      .map(s => {
+        const pct = Math.round((s.pts / maxStagePts) * 100);
+        return `<div class="pm-stage-row">
+          <span class="pm-stage-icon">${s.icon}</span>
+          <div class="pm-stage-bar-wrap">
+            <div class="pm-stage-bar" style="width:${pct}%;background:var(--${color});opacity:${s.pts > 0 ? 1 : 0.2}"></div>
+          </div>
+          <span class="pm-stage-pts ${s.pts > 0 ? 'color-' + color : 'text-dim'}">${s.pts > 0 ? '+' + s.pts : '–'}</span>
+        </div>`;
+      }).join('');
+
     return `
       <div class="podium-card rank-${i+1}">
         <div class="rank-badge">${i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'}</div>
         <div class="podium-avatar bg-${color}">${emoji}</div>
         <div class="podium-name">${r.name}</div>
         <div class="podium-total color-${color}">${r.total}</div>
-        <div class="podium-breakdown">
-          Grupos: <span>${p.group_total}</span> · Playoffs: <span>${p.playoff_total}</span>
-        </div>
-        ${maxExtra > 0 ? `<div class="max-pts-bar" style="margin-top:10px">
-          <span class="max-pts-label">Máx: <strong style="color:var(--text)">${maxTotal}pts</strong></span>
-          <div class="max-pts-track"><div class="max-pts-fill" style="width:${maxPct}%"></div></div>
-          <span class="max-pts-value" style="font-size:11px;color:var(--text2)">+${maxExtra} posibles</span>
-        </div>` : `<div style="font-size:11px;color:var(--green);margin-top:8px">✅ Puntos finalizados</div>`}
+        <div class="pm-stage-breakdown">${stageMini}</div>
+        ${maxExtra > 0
+          ? `<div class="max-pts-bar" style="margin-top:10px">
+              <span class="max-pts-label">Máx: <strong style="color:var(--text)">${maxTotal}pts</strong></span>
+              <div class="max-pts-track"><div class="max-pts-fill" style="width:${maxPct}%"></div></div>
+              <span class="max-pts-value" style="font-size:11px;color:var(--text2)">+${maxExtra} posibles</span>
+            </div>`
+          : `<div style="font-size:11px;color:var(--green);margin-top:8px">✅ Puntos finalizados</div>`}
       </div>`;
   }).join('');
 
-  // Stats grid eliminado — la info ya está en las podium cards de arriba
+  // stats-grid unused
   const statsGrid = document.getElementById('stats-grid');
   if (statsGrid) statsGrid.innerHTML = '';
+
+  // ── Desglose por Etapa ────────────────────────────────────────
+  renderBreakdownSection(participants);
 }
+
+function renderBreakdownSection(participants) {
+  const el = document.getElementById('leaderboard-breakdown');
+  if (!el) return;
+
+  // Build stage data for all participants
+  const allStages = getStageBreakdown(participants['Hugo']); // same keys for all
+  const grandMax = Math.max(
+    ...PARTICIPANTS.map(n => participants[n].grand_total), 1
+  );
+
+  // ── 1. Stage-by-stage comparison rows ──
+  const stageRows = allStages.map(stageDef => {
+    const values = PARTICIPANTS.map(name => ({
+      name, pts: getStageBreakdown(participants[name]).find(s => s.key === stageDef.key)?.pts || 0,
+      color: PARTICIPANT_COLORS[name],
+      sub: getStageBreakdown(participants[name]).find(s => s.key === stageDef.key)?.sub,
+    }));
+    const maxPts = Math.max(...values.map(v => v.pts), 1);
+    const leader = values.reduce((a, b) => b.pts > a.pts ? b : a);
+    const hasAnyPts = values.some(v => v.pts > 0);
+    const isPending = stageDef.pending && !hasAnyPts;
+
+    const bars = values.map(v => {
+      const pct = Math.round((v.pts / maxPts) * 100);
+      const isLeader = v.pts === leader.pts && v.pts > 0;
+      return `<div class="bs-participant">
+        <div class="bs-participant-name color-${v.color}">${PARTICIPANT_EMOJIS[v.name]} ${v.name}</div>
+        <div class="bs-bar-row">
+          <div class="bs-bar-track">
+            <div class="bs-bar-fill" style="width:${hasAnyPts ? pct : 0}%;background:var(--${v.color})"></div>
+          </div>
+          <span class="bs-pts ${v.pts > 0 ? 'color-' + v.color : 'bs-pts-dim'}">
+            ${v.pts > 0 ? '+' + v.pts : (isPending ? '⏳' : '–')}
+            ${isLeader && values.filter(x => x.pts === leader.pts).length === 1 ? '<span class="bs-crown">👑</span>' : ''}
+          </span>
+        </div>
+        ${v.sub ? `<div class="bs-sub">${v.sub}</div>` : ''}
+      </div>`;
+    }).join('');
+
+    return `<div class="bs-stage-card ${isPending ? 'bs-pending' : ''}">
+      <div class="bs-stage-header">
+        <span class="bs-stage-icon">${stageDef.icon}</span>
+        <span class="bs-stage-label">${stageDef.label}</span>
+        ${isPending ? '<span class="bs-pending-badge">⏳ Pendiente</span>' : ''}
+      </div>
+      <div class="bs-participants">${bars}</div>
+    </div>`;
+  }).join('');
+
+  // ── 2. Summary comparison table ──
+  const tableRows = allStages.map(stageDef => {
+    const cells = PARTICIPANTS.map(name => {
+      const pts = getStageBreakdown(participants[name]).find(s => s.key === stageDef.key)?.pts || 0;
+      const color = PARTICIPANT_COLORS[name];
+      const colPts = PARTICIPANTS.map(n => getStageBreakdown(participants[n]).find(s => s.key === stageDef.key)?.pts || 0);
+      const isMax = pts === Math.max(...colPts) && pts > 0;
+      const isMin = pts === Math.min(...colPts) && pts < Math.max(...colPts) && pts >= 0;
+      return `<td class="bs-table-cell ${isMax ? 'bs-cell-max' : isMin ? 'bs-cell-min' : ''}">
+        <span style="color:var(--${color})">${pts > 0 ? '+' + pts : '–'}</span>
+      </td>`;
+    }).join('');
+    return `<tr>
+      <td class="bs-table-stage">${stageDef.icon} ${stageDef.label}</td>
+      ${cells}
+    </tr>`;
+  }).join('');
+
+  // Totals row
+  const totalCells = PARTICIPANTS.map(name => {
+    const color = PARTICIPANT_COLORS[name];
+    return `<td class="bs-table-cell bs-table-total"><span style="color:var(--${color})">${participants[name].grand_total}</span></td>`;
+  }).join('');
+
+  // ── 3. Stacked total bar per participant ──
+  const stackedBars = PARTICIPANTS.map(name => {
+    const p = participants[name];
+    const color = PARTICIPANT_COLORS[name];
+    const pct = Math.round((p.grand_total / grandMax) * 100);
+    const groupPct = Math.round((p.group_total / Math.max(p.grand_total, 1)) * 100);
+    return `<div class="bs-total-bar-block">
+      <div class="bs-total-bar-label color-${color}">${PARTICIPANT_EMOJIS[name]} ${name}</div>
+      <div class="bs-total-bar-track">
+        <div class="bs-total-bar-fill" style="width:${pct}%;background:var(--${color})">
+          <div class="bs-total-bar-group" style="width:${groupPct}%;background:rgba(255,255,255,0.15)"></div>
+        </div>
+      </div>
+      <span class="bs-total-pts color-${color}">${p.grand_total} pts</span>
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="bs-section">
+      <div class="bs-section-title">
+        <span class="icon">📊</span> Desglose por Etapa
+        <span class="bs-title-sub">Puntos obtenidos en cada fase del torneo</span>
+      </div>
+
+      <!-- Stage cards grid -->
+      <div class="bs-stages-grid">${stageRows}</div>
+
+      <!-- Total stacked bars -->
+      <div class="bs-totals-card">
+        <div class="bs-totals-title">⚖️ Comparativa Total</div>
+        <div class="bs-totals-bars">${stackedBars}</div>
+      </div>
+
+      <!-- Summary table -->
+      <div class="bs-table-card">
+        <div class="bs-totals-title">📋 Tabla Resumen</div>
+        <div class="table-wrapper">
+          <table class="bs-summary-table">
+            <thead><tr>
+              <th>Etapa</th>
+              ${PARTICIPANTS.map(n => `<th class="color-${PARTICIPANT_COLORS[n]}">${PARTICIPANT_EMOJIS[n]} ${n}</th>`).join('')}
+            </tr></thead>
+            <tbody>
+              ${tableRows}
+              <tr class="bs-total-row">
+                <td class="bs-table-stage"><strong>🏆 Total</strong></td>
+                ${totalCells}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>`;
+}
+
 
 // =====================================================
 // GROUPS
@@ -539,9 +910,7 @@ function renderGroupFilters(groups) {
   filtersEl.innerHTML = allGroups.map(g => `
     <button class="group-filter-btn ${g === currentGroup ? 'active' : ''}"
       onclick="filterGroup('${g}')">${g === 'ALL' ? 'Todos' : 'Grupo ' + g}</button>
-  `).join('') + `
-    <input class="search-input" type="text" placeholder="🔍 Buscar equipo…"
-      oninput="filterSearch(this.value)" value="${searchQuery}" />`;
+  `).join('');
 }
 
 function filterGroup(g) {
@@ -582,44 +951,150 @@ function renderGroups() {
   const tbody = document.getElementById('groups-tbody');
   if (!matches.length) {
     tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:40px;color:var(--text3)">No hay partidos para mostrar</td></tr>`;
+  } else {
+    tbody.innerHTML = matches.map(h => {
+      const o = oscarMap[h.partido] || {};
+      const c = camiloMap[h.partido] || {};
+      const played = h.played;
+
+      return `<tr class="${!played ? 'not-played' : ''}">
+        <td><span class="partido-num">${h.partido}</span></td>
+        <td><span class="grupo-badge">${h.grupo}</span></td>
+        <td>
+          <div class="match-teams">
+            ${h.local} <span class="match-vs">vs</span> ${h.visitante}
+          </div>
+        </td>
+        <td class="center">
+          ${played
+            ? `<span class="score-real">${h.real_g_local} – ${h.real_g_visitante}</span>`
+            : `<span class="score-real pending">Pendiente</span>`}
+        </td>
+        <td class="center" style="font-size:13px;color:var(--text2)">${h.pred_g_local ?? '?'} – ${h.pred_g_visitante ?? '?'}</td>
+        <td class="center">${renderPtsPips(h, played)}</td>
+        <td class="center" style="font-size:13px;color:var(--text2)">${o.pred_g_local ?? '?'} – ${o.pred_g_visitante ?? '?'}</td>
+        <td class="center">${renderPtsPips(o, played)}</td>
+        <td class="center" style="font-size:13px;color:var(--text2)">${c.pred_g_local ?? '?'} – ${c.pred_g_visitante ?? '?'}</td>
+        <td class="center">${renderPtsPips(c, played)}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  // ── Playoff stage sections below the group matches table ──
+  const playoffContainer = document.getElementById('groups-playoff-stages');
+  if (!playoffContainer) return;
+
+  const allMatches = (appData.playoff_all_matches || []).filter(m => {
+    if (!searchQuery) return true;
+    const q = searchQuery;
+    return m.local.toLowerCase().includes(q) || m.visitante.toLowerCase().includes(q);
+  });
+  if (!allMatches.length && searchQuery) {
+    playoffContainer.innerHTML = `<p class="stage-empty" style="padding:16px 0;text-align:center">No hay partidos de playoff que coincidan con "${searchQuery}"</p>`;
+    return;
+  }
+  if (!allMatches.length) {
+    playoffContainer.innerHTML = '';
     return;
   }
 
-  tbody.innerHTML = matches.map(h => {
-    const o = oscarMap[h.partido] || {};
-    const c = camiloMap[h.partido] || {};
-    const played = h.played;
+  // Build stage sections — filter allMatches by ronda field (backend now provides it)
+  const stageConfigs = [
+    { key: 'Dieciseisavos', icon: '🎯', label: 'Partidos de Dieciseisavos' },
+    { key: 'Octavos',       icon: '⚔️', label: 'Partidos de Octavos de Final' },
+    { key: 'Cuartos',       icon: '🏹', label: 'Partidos de Cuartos de Final' },
+    { key: 'Semifinal',     icon: '⚡', label: 'Partidos de Semifinal' },
+    { key: 'Tercero',       icon: '🥉', label: 'Partido por el Tercer Puesto' },
+    { key: 'Final',         icon: '🏅', label: 'Partido de la Final' },
+  ];
 
-    return `<tr class="${!played ? 'not-played' : ''}">
-      <td><span class="partido-num">${h.partido}</span></td>
-      <td><span class="grupo-badge">${h.grupo}</span></td>
-      <td>
-        <div class="match-teams">
-          ${h.local} <span class="match-vs">vs</span> ${h.visitante}
-        </div>
-      </td>
-      <td class="center">
-        ${played
-          ? `<span class="score-real">${h.real_g_local} – ${h.real_g_visitante}</span>`
-          : `<span class="score-real pending">Pendiente</span>`}
-      </td>
-      <td class="center" style="font-size:13px;color:var(--text2)">${h.pred_g_local ?? '?'} – ${h.pred_g_visitante ?? '?'}</td>
-      <td class="center">${renderPtsPips(h, played)}</td>
-      <td class="center" style="font-size:13px;color:var(--text2)">${o.pred_g_local ?? '?'} – ${o.pred_g_visitante ?? '?'}</td>
-      <td class="center">${renderPtsPips(o, played)}</td>
-      <td class="center" style="font-size:13px;color:var(--text2)">${c.pred_g_local ?? '?'} – ${c.pred_g_visitante ?? '?'}</td>
-      <td class="center">${renderPtsPips(c, played)}</td>
-    </tr>`;
+  const stagesHtml = stageConfigs.map((cfg, si) => {
+    // Filter matches for this specific round using the ronda field from the API
+    const stageMatches = allMatches.filter(m => m.ronda === cfg.key);
+
+    let content;
+    if (!stageMatches.length) {
+      content = '<p class="stage-empty">Sin partidos en esta ronda aún.</p>';
+    } else {
+      const playedCount = stageMatches.filter(m => m.played).length;
+      const rows = stageMatches.map(m => {
+        const played = m.played;
+        const realStr = played
+          ? `<span class="score-real">${m.real_g_local} – ${m.real_g_visitante}</span>`
+          : '<span class="score-real pending">Pendiente</span>';
+
+        const participantCols = PARTICIPANTS.map(name => {
+          const p = m.participants[name];
+          const predStr = (p.pred_g_local !== null && p.pred_g_visitante !== null)
+            ? `${p.pred_g_local} – ${p.pred_g_visitante}`
+            : '<span style="color:var(--text3)">?</span>';
+          const pip = renderPtsPips({
+            pts_g_local:     p.pts_g_local,
+            pts_g_visitante: p.pts_g_visitante,
+            pts_resultado:   p.pts_resultado,
+            pts_diferencia:  p.pts_diferencia,
+            total:           p.total,
+          }, played);
+          return `<td class="center" style="font-size:13px;color:var(--text2)">${predStr}</td><td class="center">${pip}</td>`;
+        }).join('');
+
+        return `<tr class="${!played ? 'not-played' : ''}">
+          <td><span class="partido-num">${m.partido}</span></td>
+          <td style="font-size:13px;font-weight:500">${m.local} <span class="match-vs">vs</span> ${m.visitante}</td>
+          <td class="center">${realStr}</td>
+          ${participantCols}
+        </tr>`;
+      }).join('');
+
+      content = `<div class="table-wrapper"><table class="match-table playoff-group-table">
+        <thead>
+          <tr>
+            <th rowspan="2">#</th>
+            <th rowspan="2">Partido</th>
+            <th rowspan="2" class="center">Resultado Real</th>
+            ${PARTICIPANTS.map(n => `<th colspan="2" class="center participant-header-${PARTICIPANT_COLORS[n]}">${PARTICIPANT_EMOJIS[n]} ${n}</th>`).join('')}
+          </tr>
+          <tr>
+            ${PARTICIPANTS.map(() => '<th class="center" style="font-size:10px">PRED.</th><th class="center" style="font-size:10px">PTS</th>').join('')}
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+      <div style="margin-top:8px;display:flex;gap:16px;font-size:12px;color:var(--text3);padding:0 4px">
+        <span>${playedCount}/${stageMatches.length} partidos jugados</span>
+        ${PARTICIPANTS.map(name => {
+          const total = stageMatches.reduce((s, m) => s + (m.participants[name]?.total || 0), 0);
+          return `<span style="color:var(--${PARTICIPANT_COLORS[name]})"><strong>${name}:</strong> ${total} pts</span>`;
+        }).join('')}
+      </div>`;
+    }
+
+    // All playoff stages start collapsed except Dieciseisavos (we're already in this phase)
+    const id = `groups-stage-${cfg.key}`;
+    const cls = cfg.key === 'Dieciseisavos' ? 'detail-stage-section' : 'detail-stage-section collapsed';
+    return `<div class="${cls}" id="${id}">
+      <div class="detail-stage-header" onclick="toggleStage('${id}')">
+        <span class="detail-stage-icon">${cfg.icon}</span>
+        <span class="detail-stage-label">${cfg.label}</span>
+        <span class="detail-stage-chevron">&#8250;</span>
+      </div>
+      <div class="detail-stage-content">${content}</div>
+    </div>`;
   }).join('');
+
+  playoffContainer.innerHTML = `<div class="section-title" style="font-size:16px;margin:32px 0 16px">
+    <span class="icon">🎯</span> Partidos de Playoffs
+  </div>
+  <div class="detail-stages-container">${stagesHtml}</div>`;
 }
 
 function renderPtsPips(m, played) {
   if (!played) return `<span class="pts-total pending">–</span>`;
   const pips = [
-    { label: 'GL', hit: m.pts_g_local === 1 },
-    { label: 'GV', hit: m.pts_g_visitante === 1 },
-    { label: 'R', hit: m.pts_resultado === 1 },
-    { label: 'Δ', hit: m.pts_diferencia === 1 },
+    { label: 'GL', hit: m.pts_g_local > 0 },
+    { label: 'GV', hit: m.pts_g_visitante > 0 },
+    { label: 'R',  hit: m.pts_resultado > 0 },
+    { label: 'Δ',  hit: m.pts_diferencia > 0 },
   ];
   const total = m.total ?? 0;
   return `<div class="pts-cell">
@@ -717,12 +1192,6 @@ function renderDetailContent() {
   const color = PARTICIPANT_COLORS[name];
   const el = document.getElementById('detail-content');
 
-  const playedMatches = data.group_matches.filter(m => m.played);
-  const totalPossibleGroups = playedMatches.length * 4;
-  const efficiency = totalPossibleGroups > 0
-    ? Math.round((data.group_total / totalPossibleGroups) * 100)
-    : 0;
-
   el.innerHTML = `
     <div class="detail-summary">
       <div class="detail-stat">
@@ -739,113 +1208,317 @@ function renderDetailContent() {
       </div>
     </div>
 
-    <div class="section-title" style="font-size:16px;margin-bottom:12px">
-      <span class="icon">⚽</span> Rendimiento por Criterio (Grupos)
+    <div class="section-title" style="font-size:16px;margin-bottom:16px">
+      <span class="icon">⚽</span> Rendimiento por Criterio
     </div>
     ${renderDetailCriteria(data, color)}
 
-    <div class="section-title" style="font-size:16px;margin:24px 0 12px">
-      <span class="icon">🎯</span> Puntos Playoffs por Ronda
-    </div>
-    ${renderDetailPlayoffs(data)}
-
-    <div class="section-title" style="font-size:16px;margin:24px 0 12px">
+    <div class="section-title" style="font-size:16px;margin:28px 0 16px">
       <span class="icon">📋</span> Partidos Jugados
     </div>
     ${renderDetailMatches(data, color)}
   `;
 }
 
-function renderDetailCriteria(data, color) {
-  const played = data.group_matches.filter(m => m.played);
-  if (!played.length) return '<p style="color:var(--text3);font-size:14px">No hay partidos jugados aún.</p>';
-
-  const criteria = [
-    { key: 'pts_g_local', label: 'Goles Local', max: played.length },
-    { key: 'pts_g_visitante', label: 'Goles Visitante', max: played.length },
-    { key: 'pts_resultado', label: 'Resultado (L/E/V)', max: played.length },
-    { key: 'pts_diferencia', label: 'Diferencia de Goles', max: played.length },
-  ];
-
-  return `<div style="display:flex;flex-direction:column;gap:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:20px">
-    ${criteria.map(c => {
-      const hits = played.reduce((sum, m) => sum + (m[c.key] || 0), 0);
-      const pct = Math.round((hits / c.max) * 100);
-      return `
-        <div>
-          <div style="display:flex;justify-content:space-between;margin-bottom:6px;font-size:13px">
-            <span style="color:var(--text2)">${c.label}</span>
-            <span style="font-weight:600">${hits}/${c.max} <span style="color:var(--text3);font-weight:400">(${pct}%)</span></span>
-          </div>
-          <div style="background:var(--surface2);border-radius:4px;height:6px;overflow:hidden">
-            <div style="width:${pct}%;height:100%;background:var(--${color});border-radius:4px;transition:width 0.5s ease"></div>
-          </div>
-        </div>`;
-    }).join('')}
+// Helper: renders a collapsible stage accordion block
+function renderDetailStageBlock(icon, label, contentHtml, startCollapsed = false) {
+  const id = `stage-${++_stageId}`;
+  const cls = startCollapsed ? 'detail-stage-section collapsed' : 'detail-stage-section';
+  return `<div class="${cls}" id="${id}">
+    <div class="detail-stage-header" onclick="toggleStage('${id}')">
+      <span class="detail-stage-icon">${icon}</span>
+      <span class="detail-stage-label">${label}</span>
+      <span class="detail-stage-chevron">&#8250;</span>
+    </div>
+    <div class="detail-stage-content">${contentHtml}</div>
   </div>`;
 }
 
-function renderDetailPlayoffs(data) {
-  const playoff = data.playoffs.por_ronda;
-  const rows = PLAYOFF_ROUNDS.map(round => {
-    const r = playoff[round];
-    if (!r) return '';
-    const pts = r.total_ronda;
-    return `
-      <tr>
-        <td style="padding:10px 12px;font-size:14px;font-weight:500">${round}</td>
-        <td style="padding:10px 12px;font-size:13px;color:var(--text2)">${r.predichos.join(', ') || '–'}</td>
-        <td style="padding:10px 12px;text-align:center;font-size:13px;color:var(--green);font-weight:500">
-          ${r.acertados.length > 0 ? r.acertados.join(', ') : '–'}
-        </td>
-        <td style="padding:10px 12px;text-align:center;font-weight:700;font-size:15px;color:${pts > 0 ? 'var(--green)' : 'var(--text3)'}">
-          ${pts > 0 ? '+' + pts : '–'}
-        </td>
-      </tr>`;
-  }).join('');
+function renderDetailCriteria(data, color) {
+  let html = '<div class="detail-stages-container">';
 
-  return `<div class="table-wrapper"><table class="match-table">
-    <thead><tr>
-      <th>Ronda</th>
-      <th>Predichos</th>
-      <th class="center">Acertados</th>
-      <th class="center">Puntos</th>
-    </tr></thead>
-    <tbody>${rows}</tbody>
-  </table></div>`;
+  // Helper: build GL/GV/R/Δ bars from an array of played match objects
+  function buildCriteriaBars(playedMatches) {
+    const criteria = [
+      { key: 'pts_g_local',     label: 'Goles Local' },
+      { key: 'pts_g_visitante', label: 'Goles Visitante' },
+      { key: 'pts_resultado',   label: 'Resultado (L/E/V)' },
+      { key: 'pts_diferencia',  label: 'Diferencia de Goles' },
+    ];
+    const n = playedMatches.length;
+    return criteria.map(c => {
+      const hits = playedMatches.reduce((s, m) => s + (m[c.key] || 0), 0);
+      const pct  = n > 0 ? Math.round((hits / n) * 100) : 0;
+      return `<div class="criteria-row">
+        <div class="criteria-label-row">
+          <span style="color:var(--text2)">${c.label}</span>
+          <span style="font-weight:600">${hits}/${n} <span style="color:var(--text3);font-weight:400">(${pct}%)</span></span>
+        </div>
+        <div class="criteria-track">
+          <div class="criteria-fill" style="width:${pct}%;background:var(--${color})"></div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  // ── Fase de grupos ──
+  const played = data.group_matches.filter(m => m.played);
+  if (!played.length) {
+    html += renderDetailStageBlock('⚽', 'Fase de grupos',
+      '<p class="stage-empty">No hay partidos jugados a\u00fan.</p>', true);
+  } else {
+    html += renderDetailStageBlock('⚽', 'Fase de grupos', buildCriteriaBars(played), true);
+  }
+
+  // ── Playoff rounds ──
+  PLAYOFF_DISPLAY_ROUNDS.forEach(ronda => {
+    const icon = PLAYOFF_STAGE_ICONS[ronda] || '🎯';
+    const rd   = data.playoffs?.por_ronda?.[ronda];
+
+    // Match-level data for this round — filter by ronda field from the API
+    const matchDetails  = (data.playoff_match_details || []).filter(m => m.ronda === ronda);
+    const playedMatches = matchDetails.filter(m => m.played);
+
+    let content;
+
+    if (!rd || (!rd.predichos.length && !rd.reales.length)) {
+      content = '<p class="stage-empty">Sin datos para esta ronda a\u00fan.</p>';
+
+    } else if (rd.predichos.length && !rd.reales.length) {
+      // Round not yet played — show match criteria if available, else pending
+      if (playedMatches.length > 0) {
+        content = buildCriteriaBars(playedMatches) +
+          `<p class="stage-empty" style="margin-top:10px">⏳ Equipos: ronda pendiente de confirmar.</p>`;
+      } else {
+        content = `<p class="stage-empty">⏳ ${rd.predichos.length} equipos predichos — Ronda pendiente de jugarse.</p>`;
+      }
+
+    } else {
+      // Round has real results
+      let parts = '';
+
+      // 1. Match-level GL/GV/R/Δ bars (if any matches played)
+      if (playedMatches.length > 0) {
+        parts += `<div class="criteria-section-label">Partidos (${playedMatches.length}/${matchDetails.length} jugados)</div>`;
+        parts += buildCriteriaBars(playedMatches);
+        parts += `<div class="criteria-divider"></div>
+          <div class="criteria-section-label">Equipos que avanzan</div>`;
+      }
+
+      // 2. Team advancement bar (always present when rd.reales exists)
+      const hits  = rd.acertados.length;
+      const total = rd.predichos.length;
+      const pct   = total > 0 ? Math.round((hits / total) * 100) : 0;
+      parts += `<div class="criteria-row">
+        <div class="criteria-label-row">
+          <span style="color:var(--text2)">Equipos acertados</span>
+          <span style="font-weight:600">${hits}/${total} <span style="color:var(--text3);font-weight:400">(${pct}%)</span></span>
+        </div>
+        <div class="criteria-track">
+          <div class="criteria-fill" style="width:${pct}%;background:var(--${color})"></div>
+        </div>
+      </div>
+      <div style="font-size:12px;color:var(--text3);margin-top:10px">
+        Puntos ganados: <strong style="color:var(--${color})">${rd.total_ronda}</strong> pts · ${rd.puntos_por_acierto} pts/equipo
+      </div>`;
+
+      content = parts;
+    }
+
+    const startCollapsed = ronda !== 'Dieciseisavos';
+    html += renderDetailStageBlock(icon, ronda, content, startCollapsed);
+  });
+
+  html += '</div>';
+  return html;
 }
 
 function renderDetailMatches(data, color) {
+  const norm = s => s ? s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim() : '';
+  let html = '<div class="detail-stages-container">';
+
+  // ── Fase de grupos ──
   const played = data.group_matches.filter(m => m.played);
-  if (!played.length) return '<p style="color:var(--text3);font-size:14px">No hay partidos jugados aún.</p>';
+  let groupContent;
+  if (!played.length) {
+    groupContent = '<p class="stage-empty">No hay partidos jugados aún.</p>';
+  } else {
+    const rows = played.map(m => `
+      <tr>
+        <td style="padding:9px 12px"><span class="partido-num">${m.partido}</span></td>
+        <td style="padding:9px 12px"><span class="grupo-badge">${m.grupo}</span></td>
+        <td style="padding:9px 12px;font-size:13px;font-weight:500">${m.local} vs ${m.visitante}</td>
+        <td style="padding:9px 12px;text-align:center;font-weight:700">${m.real_g_local} – ${m.real_g_visitante}</td>
+        <td style="padding:9px 12px;text-align:center;font-size:13px;color:var(--text2)">${m.pred_g_local} – ${m.pred_g_visitante}</td>
+        <td style="padding:9px 12px;text-align:center;font-weight:700;font-size:16px;color:${m.total > 0 ? 'var(--' + color + ')' : 'var(--text3)'}">
+          ${m.total}
+        </td>
+      </tr>`).join('');
+    groupContent = `<div class="table-wrapper"><table class="match-table">
+      <thead><tr>
+        <th>#</th><th>Grupo</th><th>Partido</th>
+        <th class="center">Real</th>
+        <th class="center">Predicción</th>
+        <th class="center">Pts</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+  }
+  html += renderDetailStageBlock('⚽', 'Fase de grupos', groupContent, true);
 
-  const rows = played.map(m => `
-    <tr>
-      <td style="padding:9px 12px"><span class="partido-num">${m.partido}</span></td>
-      <td style="padding:9px 12px"><span class="grupo-badge">${m.grupo}</span></td>
-      <td style="padding:9px 12px;font-size:13px;font-weight:500">${m.local} vs ${m.visitante}</td>
-      <td style="padding:9px 12px;text-align:center;font-weight:700">${m.real_g_local} – ${m.real_g_visitante}</td>
-      <td style="padding:9px 12px;text-align:center;font-size:13px;color:var(--text2)">${m.pred_g_local} – ${m.pred_g_visitante}</td>
-      <td style="padding:9px 12px;text-align:center;font-weight:700;font-size:16px;color:${m.total > 0 ? 'var(--' + color + ')' : 'var(--text3)'}">
-        ${m.total}
-      </td>
-    </tr>`).join('');
+  // ── Playoff rounds ──
+  PLAYOFF_DISPLAY_ROUNDS.forEach(ronda => {
+    const icon      = PLAYOFF_STAGE_ICONS[ronda] || '🎯';
+    const rd        = data.playoffs?.por_ronda?.[ronda];
+    const predichos = rd?.predichos || [];
+    const reales    = rd?.reales   || [];
+    const acertadosNorm = new Set((rd?.acertados || []).map(norm));
+    const hasReal   = reales.length > 0;
+    const ptsPerHit = rd?.puntos_por_acierto || PLAYOFF_PTS[ronda] || 0;
 
-  return `<div class="table-wrapper"><table class="match-table">
-    <thead><tr>
-      <th>#</th><th>Grupo</th><th>Partido</th>
-      <th class="center">Real</th>
-      <th class="center">Predicción</th>
-      <th class="center">Pts</th>
-    </tr></thead>
-    <tbody>${rows}</tbody>
-  </table></div>`;
+    // Match-level data for this round — filter by ronda field from the API
+    const matchDetails = (data.playoff_match_details || []).filter(m => m.ronda === ronda);
+
+    // Table 1: match-by-match (Real vs Pred vs Pts)
+    let matchTable = '';
+    if (matchDetails.length > 0) {
+      const matchRows = matchDetails.map(m => {
+        const predStr = (m.pred_g_local !== null && m.pred_g_visitante !== null)
+          ? `${m.pred_g_local} – ${m.pred_g_visitante}`
+          : '<span style="color:var(--text3)">Sin pred.</span>';
+        const realStr = m.played
+          ? `<strong>${m.real_g_local} – ${m.real_g_visitante}</strong>`
+          : '<span style="color:var(--text3)">Pendiente</span>';
+        const ptsColor = m.total > 0 ? `var(--${color})` : 'var(--text3)';
+        const ptsStr = m.played ? m.total : '–';
+        return `<tr class="${!m.played ? 'not-played' : ''}">
+          <td style="padding:8px 12px"><span class="partido-num">${m.partido}</span></td>
+          <td style="padding:8px 12px;font-size:13px;font-weight:500">${m.local} vs ${m.visitante}</td>
+          <td style="padding:8px 12px;text-align:center">${realStr}</td>
+          <td style="padding:8px 12px;text-align:center;font-size:13px;color:var(--text2)">${predStr}</td>
+          <td style="padding:8px 12px;text-align:center;font-weight:700;font-size:15px;color:${ptsColor}">${ptsStr}</td>
+        </tr>`;
+      }).join('');
+
+      const playedCount = matchDetails.filter(m => m.played).length;
+      const totalPts = matchDetails.reduce((s, m) => s + (m.total || 0), 0);
+
+      matchTable = `
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:8px">Partidos</div>
+        <div class="table-wrapper"><table class="match-table">
+          <thead><tr>
+            <th>#</th>
+            <th>Partido</th>
+            <th class="center">Real</th>
+            <th class="center">Predicción</th>
+            <th class="center">Pts</th>
+          </tr></thead>
+          <tbody>${matchRows}</tbody>
+        </table></div>
+        ${playedCount > 0 ? `<div class="stage-total-row" style="margin-top:8px">
+          <span style="color:var(--text3)">${playedCount}/${matchDetails.length} partidos jugados:</span>
+          <span style="color:var(--${color});font-weight:700">+${totalPts} pts</span>
+        </div>` : ''}
+        <div style="margin:20px 0 8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3)">Equipos predichos que avanzan</div>`;
+    }
+
+    // Table 2: team advancement (existing)
+    let advTable = '';
+    if (!predichos.length && !reales.length) {
+      advTable = '<p class="stage-empty">Sin datos para esta ronda aún.</p>';
+    } else if (!predichos.length) {
+      advTable = '<p class="stage-empty">Sin predicciones para esta ronda.</p>';
+    } else {
+      const rows = predichos.map((equipo, i) => {
+        const isHit       = hasReal && acertadosNorm.has(norm(equipo));
+        const isMiss      = hasReal && !isHit;
+        const earnedPts   = isHit ? ptsPerHit : 0;
+        const statusIcon  = !hasReal ? '⏳' : (isHit ? '✓' : '✗');
+        const statusColor = !hasReal ? 'var(--text3)' : (isHit ? 'var(--green)' : 'var(--red,#ef4444)');
+        return `<tr class="${isMiss ? 'not-played' : ''}">
+          <td style="padding:9px 12px"><span class="partido-num">${i + 1}</span></td>
+          <td style="padding:9px 12px;font-size:13px;font-weight:500">${equipo}</td>
+          <td style="padding:9px 12px;text-align:center;font-size:16px;color:${statusColor};font-weight:700">${statusIcon}</td>
+          <td style="padding:9px 12px;text-align:center;font-weight:700;font-size:16px;color:${earnedPts > 0 ? 'var(--' + color + ')' : 'var(--text3)'}">
+            ${hasReal ? earnedPts : '–'}
+          </td>
+        </tr>`;
+      }).join('');
+
+      advTable = `<div class="table-wrapper"><table class="match-table">
+        <thead><tr>
+          <th>#</th>
+          <th>Equipo predicho</th>
+          <th class="center">¿Avanzó?</th>
+          <th class="center">Pts</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`;
+
+      if (hasReal) {
+        advTable += `<div class="stage-total-row">
+          <span style="color:var(--text3)">Total equipos acertados:</span>
+          <span style="color:var(--${color});font-weight:700">+${rd.total_ronda} pts</span>
+        </div>`;
+      }
+    }
+
+    const content = matchTable + advTable;
+    const startCollapsed = ronda !== 'Dieciseisavos';
+    html += renderDetailStageBlock(icon, ronda, content, startCollapsed);
+  });
+
+  html += '</div>';
+  return html;
 }
+
 
 // =====================================================
 // NAV
 // =====================================================
 let currentSection = 'leaderboard';
+let winnerAnimationPlayed = false;
+
+function triggerWinnerAnimation(winnerName) {
+  if (winnerAnimationPlayed) return;
+  if (typeof confetti === 'undefined') return;
+  winnerAnimationPlayed = true;
+
+  const flagEmoji = TEAM_FLAGS[winnerName] || '🏆';
+  let flagShape;
+  try {
+    flagShape = confetti.shapeFromText({ text: flagEmoji, scalar: 4 });
+  } catch(e) {
+    flagShape = 'circle'; // fallback if shapeFromText not supported
+  }
+
+  const duration = 5000;
+  const end = Date.now() + duration;
+
+  (function frame() {
+    confetti({
+      particleCount: 5,
+      angle: 60,
+      spread: 55,
+      origin: { x: 0 },
+      colors: ['#26ccff', '#a25afd', '#ff5e7e', '#88ff5a', '#fcff42', '#ffa62d', '#ff36ff'],
+      shapes: [flagShape, 'square', 'circle']
+    });
+    confetti({
+      particleCount: 5,
+      angle: 120,
+      spread: 55,
+      origin: { x: 1 },
+      colors: ['#26ccff', '#a25afd', '#ff5e7e', '#88ff5a', '#fcff42', '#ffa62d', '#ff36ff'],
+      shapes: [flagShape, 'square', 'circle']
+    });
+
+    if (Date.now() < end) {
+      requestAnimationFrame(frame);
+    }
+  }());
+}
+
 
 function showSection(name) {
   currentSection = name;
@@ -853,6 +1526,10 @@ function showSection(name) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById(`section-${name}`)?.classList.add('active');
   document.getElementById(`nav-${name}`)?.classList.add('active');
+  
+  if (name === 'bracket' && typeof appData !== 'undefined' && appData.real_playoffs && appData.real_playoffs['Campeón'] && appData.real_playoffs['Campeón'].length > 0) {
+    triggerWinnerAnimation(appData.real_playoffs['Campeón'][0]);
+  }
 }
 
 // =====================================================

@@ -57,37 +57,60 @@
       <div class="podium" id="podium-container"></div>
     </div>
     <div class="stats-grid" id="stats-grid"></div>
+    <!-- Desglose por etapa -->
+    <div id="leaderboard-breakdown"></div>
   </div>
 
   <!-- ===== GROUPS SECTION ===== -->
   <div class="section" id="section-groups">
-    <div class="section-title"><span class="icon">⚽</span> Partidos de Fase de Grupos</div>
-    <div class="groups-controls" id="group-filters"></div>
-    <div class="table-wrapper">
-      <table class="match-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Grupo</th>
-            <th>Partido</th>
-            <th class="center">Resultado Real</th>
-            <th class="center" colspan="2">Hugo</th>
-            <th class="center" colspan="2">Oscar</th>
-            <th class="center" colspan="2">Camilo</th>
-          </tr>
-          <tr style="background:rgba(0,0,0,0.2)">
-            <th></th><th></th><th></th><th></th>
-            <th class="center" style="font-size:10px;color:var(--text3)">Pred.</th>
-            <th class="center" style="font-size:10px;color:var(--text3)">Pts</th>
-            <th class="center" style="font-size:10px;color:var(--text3)">Pred.</th>
-            <th class="center" style="font-size:10px;color:var(--text3)">Pts</th>
-            <th class="center" style="font-size:10px;color:var(--text3)">Pred.</th>
-            <th class="center" style="font-size:10px;color:var(--text3)">Pts</th>
-          </tr>
-        </thead>
-        <tbody id="groups-tbody"></tbody>
-      </table>
+    <!-- Buscador general, arriba del todo -->
+    <div class="groups-search-bar">
+      <input
+        id="groups-search-input"
+        class="search-input search-input-full"
+        type="text"
+        placeholder="🔍 Buscar equipo en toda la sección…"
+        oninput="filterSearch(this.value)"
+      />
     </div>
+    <!-- Collapsible: Fase de Grupos (colapsado por defecto — estamos en 16vos) -->
+    <div class="detail-stage-section collapsed" id="groups-stage-grupos">
+      <div class="detail-stage-header" onclick="toggleStage('groups-stage-grupos')">
+        <span class="detail-stage-icon">⚽</span>
+        <span class="detail-stage-label">Partidos de Fase de Grupos</span>
+        <span class="detail-stage-chevron">&#8250;</span>
+      </div>
+      <div class="detail-stage-content">
+        <div class="groups-controls" id="group-filters"></div>
+        <div class="table-wrapper">
+          <table class="match-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Grupo</th>
+                <th>Partido</th>
+                <th class="center">Resultado Real</th>
+                <th class="center" colspan="2">Hugo</th>
+                <th class="center" colspan="2">Oscar</th>
+                <th class="center" colspan="2">Camilo</th>
+              </tr>
+              <tr style="background:rgba(0,0,0,0.2)">
+                <th></th><th></th><th></th><th></th>
+                <th class="center" style="font-size:10px;color:var(--text3)">Pred.</th>
+                <th class="center" style="font-size:10px;color:var(--text3)">Pts</th>
+                <th class="center" style="font-size:10px;color:var(--text3)">Pred.</th>
+                <th class="center" style="font-size:10px;color:var(--text3)">Pts</th>
+                <th class="center" style="font-size:10px;color:var(--text3)">Pred.</th>
+                <th class="center" style="font-size:10px;color:var(--text3)">Pts</th>
+              </tr>
+            </thead>
+            <tbody id="groups-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <!-- Playoff stages added dynamically by renderGroups() -->
+    <div id="groups-playoff-stages"></div>
   </div>
 
   <!-- ===== STANDINGS SECTION ===== -->
@@ -142,6 +165,7 @@
 <!-- TOAST -->
 <div id="toast"></div>
 
-<script src="/static/app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js"></script>
+<script src="/static/app.js?v=2"></script>
 </body>
 </html>
