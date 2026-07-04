@@ -685,14 +685,85 @@ async function syncPlayoffs() {
 // LEADERBOARD
 // =====================================================
 
+// ── Phase helpers ─────────────────────────────────────────────────────────
+function getCurrentPhaseKey() {
+  const prog = appData?.tournament_progress;
+  if (!prog) return 'grupos';
+  if (!prog.group_stage_complete) return 'grupos';
+
+  // Use match data instead of team counts — team counts can be populated
+  // for future rounds by heal logic even while current round is in progress.
+  const matches = appData?.real_playoff_matches || [];
+  const order = ['Dieciseisavos', 'Octavos', 'Cuartos', 'Semifinal', 'Final'];
+  // Expected number of matches per round
+  const expected = { Dieciseisavos: 16, Octavos: 8, Cuartos: 4, Semifinal: 2, Final: 1 };
+
+  let lastRoundWithMatches = null;
+
+  for (const ronda of order) {
+    const roundMatches = matches.filter(m => m.ronda === ronda);
+    if (roundMatches.length === 0) {
+      // No match rows in sheet yet → round hasn't started
+      break;
+    }
+    const playedCount = roundMatches.filter(m => m.played).length;
+    const totalExpected = expected[ronda] || roundMatches.length;
+    lastRoundWithMatches = ronda;
+
+    if (playedCount < totalExpected) {
+      // Round is in progress (some or all unplayed)
+      return ronda;
+    }
+    // All matches played → round complete, check next
+  }
+
+  // If all rounds with match rows are complete, the current phase is
+  // the next one after the last completed (or the last completed if tournament done)
+  if (lastRoundWithMatches) {
+    const idx = order.indexOf(lastRoundWithMatches);
+    return order[idx + 1] || lastRoundWithMatches;
+  }
+
+  return 'Dieciseisavos'; // groups done, R32 starting
+}
+
+function getPhaseStatus(stageKey) {
+  const prog = appData?.tournament_progress;
+
+  // Grupos: check directly via group stage progress
+  if (stageKey === 'grupos') {
+    if (!prog) return 'future';
+    if (prog.group_stage_complete) return 'past';
+    if ((prog.played_group_matches || 0) > 0) return 'current';
+    return 'future';
+  }
+
+  const currentKey = getCurrentPhaseKey();
+  const order = ['grupos', 'Dieciseisavos', 'Octavos', 'Cuartos', 'Semifinal', 'Tercero', 'Final', 'Campeón'];
+  // Tercero is tied to Final timeline
+  if (stageKey === 'Tercero') {
+    const rounds = prog?.real_playoffs_rounds || {};
+    if ((rounds['Campeón'] || 0) > 0) return 'past';
+    if ((rounds['Semifinal'] || 0) >= 4) return 'current';
+    return 'future';
+  }
+  const currentIdx = order.indexOf(currentKey);
+  const stageIdx  = order.indexOf(stageKey);
+  if (currentIdx < 0 || stageIdx < 0) return 'future';
+  if (stageIdx < currentIdx) return 'past';
+  if (stageIdx === currentIdx) return 'current';
+  return 'future';
+}
+
 // Compute per-stage points for a participant
 function getStageBreakdown(p) {
   const stages = [];
 
   // Groups
+  const groupPts = p.group_total || 0;
   stages.push({
     key: 'grupos', label: 'Grupos', icon: '⚽',
-    pts: p.group_total || 0, sub: null,
+    pts: groupPts, sub: groupPts > 0 ? `Partidos: +${groupPts}` : null,
   });
 
   // Playoff rounds — filter match details by ronda field (works for all rounds)
@@ -737,12 +808,15 @@ function renderLeaderboard() {
       .filter(s => s.pts > 0 || !s.pending)
       .map(s => {
         const pct = Math.round((s.pts / maxStagePts) * 100);
-        return `<div class="pm-stage-row">
+        const phase = getPhaseStatus(s.key);
+        const isCurrent = phase === 'current';
+        const isPast    = phase === 'past';
+        return `<div class="pm-stage-row pm-phase-${phase}">
           <span class="pm-stage-icon">${s.icon}</span>
           <div class="pm-stage-bar-wrap">
-            <div class="pm-stage-bar" style="width:${pct}%;background:var(--${color});opacity:${s.pts > 0 ? 1 : 0.2}"></div>
+            <div class="pm-stage-bar" style="width:${pct}%;background:${isCurrent ? 'var(--green)' : `var(--${color})`};opacity:${s.pts > 0 ? (isPast ? 0.55 : 1) : 0.2}"></div>
           </div>
-          <span class="pm-stage-pts ${s.pts > 0 ? 'color-' + color : 'text-dim'}">${s.pts > 0 ? '+' + s.pts : '–'}</span>
+          <span class="pm-stage-pts ${s.pts > 0 ? (isCurrent ? 'color-green' : 'color-' + color) : 'text-dim'}">${s.pts > 0 ? '+' + s.pts : '–'}</span>
         </div>`;
       }).join('');
 
@@ -771,6 +845,38 @@ function renderLeaderboard() {
   renderBreakdownSection(participants);
 }
 
+// ── Calcula el máximo posible de puntos para una etapa dada ──────────────
+function getMaxPossibleForStage(stageKey) {
+  const prog = appData.tournament_progress;
+
+  if (stageKey === 'grupos') {
+    // 72 partidos × 4 pts máx cada uno (GL + GV + Resultado + Diferencia)
+    return 72 * 4;
+  }
+
+  // Para rondas de playoff: puntos por equipos + puntos por partidos
+  if (PLAYOFF_ROUNDS.includes(stageKey)) {
+    // Equipos máximos por ronda
+    const teamSlots = {
+      'Dieciseisavos': 32, 'Octavos': 16, 'Cuartos': 8,
+      'Semifinal': 4, 'Tercero': 2, 'Final': 2, 'Campeón': 1,
+    };
+    const ptsPerTeam = PLAYOFF_PTS[stageKey] || 0;
+    const maxTeamPts = (teamSlots[stageKey] || 0) * ptsPerTeam;
+
+    // Partidos por ronda × 4 pts máx por partido
+    const matchSlots = {
+      'Dieciseisavos': 16, 'Octavos': 8, 'Cuartos': 4,
+      'Semifinal': 2, 'Tercero': 1, 'Final': 1, 'Campeón': 0,
+    };
+    const maxMatchPts = (matchSlots[stageKey] || 0) * 4;
+
+    return maxTeamPts + maxMatchPts;
+  }
+
+  return 1;
+}
+
 function renderBreakdownSection(participants) {
   const el = document.getElementById('leaderboard-breakdown');
   if (!el) return;
@@ -788,22 +894,33 @@ function renderBreakdownSection(participants) {
       color: PARTICIPANT_COLORS[name],
       sub: getStageBreakdown(participants[name]).find(s => s.key === stageDef.key)?.sub,
     }));
-    const maxPts = Math.max(...values.map(v => v.pts), 1);
+    // 100% = máximo posible en esa etapa (no el mayor entre participantes)
+    const maxPossible = getMaxPossibleForStage(stageDef.key);
     const leader = values.reduce((a, b) => b.pts > a.pts ? b : a);
     const hasAnyPts = values.some(v => v.pts > 0);
     const isPending = stageDef.pending && !hasAnyPts;
 
+    const phaseStatus = getPhaseStatus(stageDef.key);
+    const isCurrent   = phaseStatus === 'current';
+    const isPastPhase = phaseStatus === 'past';
+
     const bars = values.map(v => {
-      const pct = Math.round((v.pts / maxPts) * 100);
+      const pct = maxPossible > 0 ? Math.round((v.pts / maxPossible) * 100) : 0;
       const isLeader = v.pts === leader.pts && v.pts > 0;
+      const ptsLabel = v.pts > 0
+        ? `${v.pts} / ${maxPossible} pts`
+        : (isPending ? '⏳' : `0 / ${maxPossible} pts`);
+      const barColor = isCurrent ? 'var(--green)' : `var(--${v.color})`;
+      const barOpacity = isPastPhase ? 0.5 : 1;
+      const labelCls = v.pts > 0 ? (isCurrent ? 'color-green' : 'color-' + v.color) : 'bs-pts-dim';
       return `<div class="bs-participant">
         <div class="bs-participant-name color-${v.color}">${PARTICIPANT_EMOJIS[v.name]} ${v.name}</div>
         <div class="bs-bar-row">
           <div class="bs-bar-track">
-            <div class="bs-bar-fill" style="width:${hasAnyPts ? pct : 0}%;background:var(--${v.color})"></div>
+            <div class="bs-bar-fill" style="width:${hasAnyPts ? pct : 0}%;background:${barColor};opacity:${barOpacity}"></div>
           </div>
-          <span class="bs-pts ${v.pts > 0 ? 'color-' + v.color : 'bs-pts-dim'}">
-            ${v.pts > 0 ? '+' + v.pts : (isPending ? '⏳' : '–')}
+          <span class="bs-pts ${labelCls}">
+            ${ptsLabel}
             ${isLeader && values.filter(x => x.pts === leader.pts).length === 1 ? '<span class="bs-crown">👑</span>' : ''}
           </span>
         </div>
@@ -811,11 +928,16 @@ function renderBreakdownSection(participants) {
       </div>`;
     }).join('');
 
-    return `<div class="bs-stage-card ${isPending ? 'bs-pending' : ''}">
+    const currentBadge = isCurrent
+      ? '<span class="bs-current-badge">● En curso</span>'
+      : '';
+
+    return `<div class="bs-stage-card ${isPending ? 'bs-pending' : ''} bs-phase-${phaseStatus}">
       <div class="bs-stage-header">
         <span class="bs-stage-icon">${stageDef.icon}</span>
         <span class="bs-stage-label">${stageDef.label}</span>
         ${isPending ? '<span class="bs-pending-badge">⏳ Pendiente</span>' : ''}
+        ${currentBadge}
       </div>
       <div class="bs-participants">${bars}</div>
     </div>`;
@@ -866,7 +988,7 @@ function renderBreakdownSection(participants) {
     <div class="bs-section">
       <div class="bs-section-title">
         <span class="icon">📊</span> Desglose por Etapa
-        <span class="bs-title-sub">Puntos obtenidos en cada fase del torneo</span>
+        <span class="bs-title-sub">Puntos obtenidos vs. máximo posible por fase</span>
       </div>
 
       <!-- Stage cards grid -->
@@ -928,6 +1050,26 @@ function renderGroups() {
   const oscarMatches = appData.participants['Oscar'].group_matches;
   const camiloMatches = appData.participants['Camilo'].group_matches;
 
+  // Apply phase styling to the static "Fase de Grupos" accordion in index.html
+  const gruposSection = document.getElementById('groups-stage-grupos');
+  if (gruposSection) {
+    const phase = getPhaseStatus('grupos');
+    gruposSection.classList.remove('dss-phase-past', 'dss-phase-current', 'dss-phase-future');
+    gruposSection.classList.add(`dss-phase-${phase}`);
+    const header = gruposSection.querySelector('.detail-stage-header');
+    if (header) {
+      // Remove any existing badge
+      header.querySelectorAll('.detail-phase-badge').forEach(b => b.remove());
+      let badge = '';
+      if (phase === 'past')    badge = '<span class="detail-phase-badge detail-phase-past">✓ Finalizada</span>';
+      if (phase === 'current') badge = '<span class="detail-phase-badge detail-phase-current">● En curso</span>';
+      if (badge) {
+        const chevron = header.querySelector('.detail-stage-chevron');
+        chevron.insertAdjacentHTML('beforebegin', badge);
+      }
+    }
+  }
+
   // Build a map by partido number
   const oscarMap = {};
   const camiloMap = {};
@@ -937,6 +1079,7 @@ function renderGroups() {
   // Get unique groups
   const groups = [...new Set(hugoMatches.map(m => m.grupo))].filter(Boolean).sort();
   renderGroupFilters(groups);
+
 
   // Filter
   let matches = hugoMatches.filter(m => {
@@ -1069,13 +1212,20 @@ function renderGroups() {
       </div>`;
     }
 
-    // All playoff stages start collapsed except Dieciseisavos (we're already in this phase)
+    // All playoff stages start collapsed except Octavos (most recently completed phase)
     const id = `groups-stage-${cfg.key}`;
-    const cls = cfg.key === 'Dieciseisavos' ? 'detail-stage-section' : 'detail-stage-section collapsed';
-    return `<div class="${cls}" id="${id}">
+    const collapsed = cfg.key === 'Octavos' ? '' : ' collapsed';
+    const phaseStatus = getPhaseStatus(cfg.key);
+    const phaseBadge = phaseStatus === 'current'
+      ? '<span class="detail-phase-badge detail-phase-current">● En curso</span>'
+      : phaseStatus === 'past'
+      ? '<span class="detail-phase-badge detail-phase-past">✓ Finalizada</span>'
+      : '';
+    return `<div class="detail-stage-section${collapsed} dss-phase-${phaseStatus}" id="${id}">
       <div class="detail-stage-header" onclick="toggleStage('${id}')">
         <span class="detail-stage-icon">${cfg.icon}</span>
         <span class="detail-stage-label">${cfg.label}</span>
+        ${phaseBadge}
         <span class="detail-stage-chevron">&#8250;</span>
       </div>
       <div class="detail-stage-content">${content}</div>
@@ -1221,13 +1371,19 @@ function renderDetailContent() {
 }
 
 // Helper: renders a collapsible stage accordion block
-function renderDetailStageBlock(icon, label, contentHtml, startCollapsed = false) {
+function renderDetailStageBlock(icon, label, contentHtml, startCollapsed = false, phaseStatus = 'future') {
   const id = `stage-${++_stageId}`;
   const cls = startCollapsed ? 'detail-stage-section collapsed' : 'detail-stage-section';
-  return `<div class="${cls}" id="${id}">
+  const currentBadge = phaseStatus === 'current'
+    ? '<span class="detail-phase-badge detail-phase-current">● En curso</span>'
+    : phaseStatus === 'past'
+    ? '<span class="detail-phase-badge detail-phase-past">✓ Finalizada</span>'
+    : '';
+  return `<div class="${cls} dss-phase-${phaseStatus}" id="${id}">
     <div class="detail-stage-header" onclick="toggleStage('${id}')">
       <span class="detail-stage-icon">${icon}</span>
       <span class="detail-stage-label">${label}</span>
+      ${currentBadge}
       <span class="detail-stage-chevron">&#8250;</span>
     </div>
     <div class="detail-stage-content">${contentHtml}</div>
@@ -1265,9 +1421,9 @@ function renderDetailCriteria(data, color) {
   const played = data.group_matches.filter(m => m.played);
   if (!played.length) {
     html += renderDetailStageBlock('⚽', 'Fase de grupos',
-      '<p class="stage-empty">No hay partidos jugados a\u00fan.</p>', true);
+      '<p class="stage-empty">No hay partidos jugados aún.</p>', true, getPhaseStatus('grupos'));
   } else {
-    html += renderDetailStageBlock('⚽', 'Fase de grupos', buildCriteriaBars(played), true);
+    html += renderDetailStageBlock('⚽', 'Fase de grupos', buildCriteriaBars(played), true, getPhaseStatus('grupos'));
   }
 
   // ── Playoff rounds ──
@@ -1325,8 +1481,8 @@ function renderDetailCriteria(data, color) {
       content = parts;
     }
 
-    const startCollapsed = ronda !== 'Dieciseisavos';
-    html += renderDetailStageBlock(icon, ronda, content, startCollapsed);
+    const startCollapsed = ronda !== 'Octavos';
+    html += renderDetailStageBlock(icon, ronda, content, startCollapsed, getPhaseStatus(ronda));
   });
 
   html += '</div>';
@@ -1364,7 +1520,7 @@ function renderDetailMatches(data, color) {
       <tbody>${rows}</tbody>
     </table></div>`;
   }
-  html += renderDetailStageBlock('⚽', 'Fase de grupos', groupContent, true);
+  html += renderDetailStageBlock('⚽', 'Fase de grupos', groupContent, true, getPhaseStatus('grupos'));
 
   // ── Playoff rounds ──
   PLAYOFF_DISPLAY_ROUNDS.forEach(ronda => {
@@ -1464,8 +1620,8 @@ function renderDetailMatches(data, color) {
     }
 
     const content = matchTable + advTable;
-    const startCollapsed = ronda !== 'Dieciseisavos';
-    html += renderDetailStageBlock(icon, ronda, content, startCollapsed);
+    const startCollapsed = ronda !== 'Octavos';
+    html += renderDetailStageBlock(icon, ronda, content, startCollapsed, getPhaseStatus(ronda));
   });
 
   html += '</div>';

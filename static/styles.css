@@ -392,6 +392,51 @@ main {
 }
 .bs-stage-card:hover { border-color: rgba(255,255,255,0.12); }
 .bs-stage-card.bs-pending { opacity: 0.6; }
+
+/* ── Phase status: breakdown cards ── */
+.bs-phase-past {
+  opacity: 0.72;
+}
+.bs-phase-past .bs-bar-fill {
+  filter: saturate(0.45);
+}
+.bs-phase-current {
+  border-color: var(--green) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--green) 40%, transparent),
+              0 4px 18px color-mix(in srgb, var(--green) 12%, transparent);
+}
+.bs-phase-current .bs-stage-header {
+  background: color-mix(in srgb, var(--green) 8%, transparent);
+}
+.bs-current-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 15%, transparent);
+  border-radius: 4px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+/* ── Phase badges: detail sections ── */
+.detail-phase-badge {
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+.detail-phase-current {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 15%, transparent);
+}
+.detail-phase-past {
+  color: var(--text3);
+  background: rgba(255,255,255,0.05);
+}
+/* utility */
+.color-green { color: var(--green); }
+
 .bs-stage-header {
   display: flex;
   align-items: center;
@@ -415,6 +460,12 @@ main {
   background: rgba(255,255,255,0.05);
   border-radius: 4px;
   padding: 2px 6px;
+}
+.bs-max-label {
+  font-size: 10px;
+  color: var(--text3);
+  margin-left: auto;
+  white-space: nowrap;
 }
 .bs-participants {
   padding: 12px 16px;
@@ -447,10 +498,11 @@ main {
   transition: width 0.7s cubic-bezier(0.4,0,0.2,1);
 }
 .bs-pts {
-  font-size: 13px;
-  font-weight: 800;
-  min-width: 42px;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 90px;
   text-align: right;
+  white-space: nowrap;
 }
 .bs-pts-dim { color: var(--text3); }
 .bs-crown { font-size: 10px; margin-left: 2px; }
@@ -1396,6 +1448,27 @@ main {
 }
 .detail-stage-section + .detail-stage-section { margin-top: 10px; }
 .detail-stage-section:hover { border-color: var(--border2); }
+
+/* ── Phase status: detail stage accordion sections ── */
+.dss-phase-past {
+  opacity: 0.72;
+}
+.dss-phase-past .detail-stage-header {
+  filter: saturate(0.6);
+}
+.dss-phase-current {
+  border-color: var(--green) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--green) 35%, transparent),
+              0 4px 18px color-mix(in srgb, var(--green) 10%, transparent);
+}
+.dss-phase-current .detail-stage-header {
+  background: color-mix(in srgb, var(--green) 7%, var(--surface));
+  border-bottom-color: color-mix(in srgb, var(--green) 30%, var(--border));
+}
+.dss-phase-current .detail-stage-header:hover {
+  background: color-mix(in srgb, var(--green) 12%, var(--surface));
+}
+
 
 /* Groups section: spacing between the groups accordion and the playoff stages container */
 #groups-playoff-stages { margin-top: 10px; }
