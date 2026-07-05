@@ -1682,11 +1682,38 @@ function showSection(name) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById(`section-${name}`)?.classList.add('active');
   document.getElementById(`nav-${name}`)?.classList.add('active');
-  
+
+  // Sync drawer active state
+  document.querySelectorAll('.dnav-btn[data-section]').forEach(b => {
+    b.classList.toggle('active', b.dataset.section === name);
+  });
+
   if (name === 'bracket' && typeof appData !== 'undefined' && appData.real_playoffs && appData.real_playoffs['Campeón'] && appData.real_playoffs['Campeón'].length > 0) {
     triggerWinnerAnimation(appData.real_playoffs['Campeón'][0]);
   }
 }
+
+// =====================================================
+// DRAWER (mobile)
+// =====================================================
+function openDrawer() {
+  const overlay = document.getElementById('nav-drawer-overlay');
+  if (!overlay) return;
+  overlay.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function closeDrawer() {
+  const overlay = document.getElementById('nav-drawer-overlay');
+  if (!overlay) return;
+  overlay.style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+// Close drawer with ESC key
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeDrawer();
+});
 
 // =====================================================
 // TOAST

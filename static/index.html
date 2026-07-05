@@ -2,7 +2,11 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Polla 2026" />
   <title>Polla Mundial 2026 🏆</title>
   <meta name="description" content="Tabla de puntos de la polla del Mundial 2026 - Hugo, Oscar y Camilo" />
   <link rel="stylesheet" href="/static/styles.css" />
@@ -33,6 +37,11 @@
       <span class="refresh-icon" style="display:inline-block">↺</span>
       Actualizar Todo
     </button>
+
+    <!-- Hamburger: mobile only -->
+    <button class="hamburger-btn" id="hamburger-btn" onclick="openDrawer()" aria-label="Menú de navegación">
+      <span></span><span></span><span></span>
+    </button>
   </div>
   <!-- Barra de progreso del torneo -->
   <div id="progress-bar-container">
@@ -40,6 +49,55 @@
     <span id="progress-bar-label"></span>
   </div>
 </header>
+
+<!-- NAV DRAWER (mobile hamburger menu) -->
+<div id="nav-drawer-overlay" class="nav-drawer-overlay" style="display:none" onclick="closeDrawer()">
+  <div class="nav-drawer" onclick="event.stopPropagation()">
+
+    <!-- Header del drawer -->
+    <div class="nav-drawer-header">
+      <div class="nav-drawer-brand">
+        <span style="font-size:22px">⚽</span>
+        <div>
+          <div class="nav-drawer-title">Polla Mundial 2026</div>
+          <div class="nav-drawer-sub">Hugo · Oscar · Camilo</div>
+        </div>
+      </div>
+      <button class="drawer-close-btn" onclick="closeDrawer()" aria-label="Cerrar menú">✕</button>
+    </div>
+
+    <!-- Links de navegación -->
+    <nav class="nav-drawer-nav">
+      <button class="dnav-btn active" data-section="leaderboard" onclick="showSection('leaderboard'); closeDrawer()">
+        <span class="dnav-icon">🏆</span><span>Posiciones</span>
+      </button>
+      <button class="dnav-btn" data-section="groups" onclick="showSection('groups'); closeDrawer()">
+        <span class="dnav-icon">⚽</span><span>Grupos</span>
+      </button>
+      <button class="dnav-btn" data-section="standings" onclick="showSection('standings'); closeDrawer()">
+        <span class="dnav-icon">📊</span><span>Tablas</span>
+      </button>
+      <button class="dnav-btn" data-section="playoffs" onclick="showSection('playoffs'); closeDrawer()">
+        <span class="dnav-icon">🎯</span><span>Playoffs</span>
+      </button>
+      <button class="dnav-btn" data-section="bracket" onclick="showSection('bracket'); closeDrawer()">
+        <span class="dnav-icon">🔗</span><span>Bracket</span>
+      </button>
+      <button class="dnav-btn" data-section="detail" onclick="showSection('detail'); closeDrawer()">
+        <span class="dnav-icon">📋</span><span>Detalle</span>
+      </button>
+    </nav>
+
+    <!-- Footer con botón actualizar -->
+    <div class="nav-drawer-footer">
+      <div class="dnav-divider"></div>
+      <button class="dnav-btn dnav-refresh" onclick="syncAndReload(); closeDrawer()">
+        <span class="dnav-icon">↺</span><span>Actualizar Todo</span>
+      </button>
+    </div>
+
+  </div>
+</div>
 
 <!-- MAIN -->
 <main>
