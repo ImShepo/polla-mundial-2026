@@ -967,22 +967,7 @@ function renderBreakdownSection(participants) {
     return `<td class="bs-table-cell bs-table-total"><span style="color:var(--${color})">${participants[name].grand_total}</span></td>`;
   }).join('');
 
-  // ── 3. Stacked total bar per participant ──
-  const stackedBars = PARTICIPANTS.map(name => {
-    const p = participants[name];
-    const color = PARTICIPANT_COLORS[name];
-    const pct = Math.round((p.grand_total / grandMax) * 100);
-    const groupPct = Math.round((p.group_total / Math.max(p.grand_total, 1)) * 100);
-    return `<div class="bs-total-bar-block">
-      <div class="bs-total-bar-label color-${color}">${PARTICIPANT_EMOJIS[name]} ${name}</div>
-      <div class="bs-total-bar-track">
-        <div class="bs-total-bar-fill" style="width:${pct}%;background:var(--${color})">
-          <div class="bs-total-bar-group" style="width:${groupPct}%;background:rgba(255,255,255,0.15)"></div>
-        </div>
-      </div>
-      <span class="bs-total-pts color-${color}">${p.grand_total} pts</span>
-    </div>`;
-  }).join('');
+  // Note: The total stacked bar was removed in favor of the Timeline Chart.
 
   el.innerHTML = `
     <div class="bs-section">
@@ -994,10 +979,18 @@ function renderBreakdownSection(participants) {
       <!-- Stage cards grid -->
       <div class="bs-stages-grid">${stageRows}</div>
 
-      <!-- Total stacked bars -->
-      <div class="bs-totals-card">
-        <div class="bs-totals-title">⚖️ Comparativa Total</div>
-        <div class="bs-totals-bars">${stackedBars}</div>
+      <!-- Timeline Chart -->
+      <div class="timeline-card">
+        <div class="timeline-header">
+          <div class="timeline-title">📈 Evolución de Puntos</div>
+          <div class="timeline-filters">
+            <button class="tl-filter-btn active" onclick="renderTimelineChart('day')" id="tl-btn-day">Día</button>
+            <button class="tl-filter-btn" onclick="renderTimelineChart('week')" id="tl-btn-week">Semana</button>
+            <button class="tl-filter-btn" onclick="renderTimelineChart('phase')" id="tl-btn-phase">Fase</button>
+            <button class="tl-filter-btn" onclick="renderTimelineChart('month')" id="tl-btn-month">Mes</button>
+          </div>
+        </div>
+        <div id="timeline-chart-container"></div>
       </div>
 
       <!-- Summary table -->
@@ -1019,7 +1012,10 @@ function renderBreakdownSection(participants) {
           </table>
         </div>
       </div>
+      </div>
     </div>`;
+
+  setTimeout(() => renderTimelineChart('day'), 0);
 }
 
 
@@ -1714,6 +1710,214 @@ function closeDrawer() {
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') closeDrawer();
 });
+
+// =====================================================
+// TIMELINE CHART (ApexCharts)
+// =====================================================
+let timelineChart = null;
+
+function getMatchDate(phase, matchIndex) {
+  // World Cup 2026 Dates
+  // Groups: 11 Jun - 27 Jun
+  if (phase === 'group') {
+    const dayOffset = Math.min(16, Math.floor((matchIndex - 1) / 4.23));
+    const d = new Date(2026, 5, 11 + dayOffset);
+    return d.toISOString().split('T')[0];
+  } else if (phase === 'Dieciseisavos') {
+    // 28 Jun - 3 Jul (16 matches over 6 days)
+    const dayOffset = Math.min(5, Math.floor((matchIndex - 1) / 2.66));
+    const d = new Date(2026, 5, 28 + dayOffset);
+    return d.toISOString().split('T')[0];
+  } else if (phase === 'Octavos') {
+    // 4 Jul - 7 Jul (8 matches over 4 days)
+    const dayOffset = Math.floor((matchIndex - 1) / 2);
+    const d = new Date(2026, 6, 4 + dayOffset);
+    return d.toISOString().split('T')[0];
+  } else if (phase === 'Cuartos') {
+    // 9 Jul - 11 Jul (4 matches: 2 on 9th, 1 on 10th, 1 on 11th)
+    const dayOffset = matchIndex <= 2 ? 0 : (matchIndex === 3 ? 1 : 2);
+    const d = new Date(2026, 6, 9 + dayOffset);
+    return d.toISOString().split('T')[0];
+  } else if (phase === 'Semifinal') {
+    // 14 Jul - 15 Jul (2 matches)
+    const dayOffset = matchIndex - 1;
+    const d = new Date(2026, 6, 14 + dayOffset);
+    return d.toISOString().split('T')[0];
+  } else if (phase === 'Tercer Puesto' || phase === 'Tercero') {
+    return '2026-07-18';
+  } else if (phase === 'Final') {
+    return '2026-07-19';
+  }
+  return '2026-06-11';
+}
+
+function renderTimelineChart(filterType = 'day') {
+  // Update button active states
+  document.querySelectorAll('.tl-filter-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('tl-btn-' + filterType);
+  if (btn) btn.classList.add('active');
+
+  const series = PARTICIPANTS.map(name => {
+    const p = appData.participants[name]; // using global appData
+    
+    // Extract and date all matches
+    let matches = [];
+    
+    // Group Matches
+    (p.group_matches || []).forEach(m => {
+      if (m.played) {
+        matches.push({ phase: 'group', matchIndex: m.partido, pts: m.total, date: getMatchDate('group', m.partido), realPhase: 'Grupos' });
+      }
+    });
+    
+    // Playoff Matches
+    (p.playoff_match_details || []).forEach(m => {
+      if (m.played) {
+        matches.push({ phase: m.ronda, matchIndex: m.partido, pts: m.total, date: getMatchDate(m.ronda, m.partido), realPhase: m.ronda });
+      }
+    });
+    
+    // Playoff Advancement Points (teams reaching next rounds)
+    const advDates = {
+      'Dieciseisavos': '2026-06-27',
+      'Octavos': '2026-07-03',
+      'Cuartos': '2026-07-07',
+      'Semifinal': '2026-07-11',
+      'Tercero': '2026-07-15',
+      'Final': '2026-07-15',
+      'Campeón': '2026-07-19'
+    };
+    if (p.playoffs && p.playoffs.por_ronda) {
+      Object.keys(p.playoffs.por_ronda).forEach(ronda => {
+        const pts = p.playoffs.por_ronda[ronda].total_ronda;
+        if (pts > 0) {
+          matches.push({ phase: ronda, matchIndex: 999, pts: pts, date: advDates[ronda] || '2026-07-19', realPhase: ronda });
+        }
+      });
+    }
+    
+    // Sort chronologically by Date string, then by phase, then by matchIndex
+    const phaseOrder = {'group':1, 'Dieciseisavos':2, 'Octavos':3, 'Cuartos':4, 'Semifinal':5, 'Tercero':6, 'Tercer Puesto':6, 'Final':7, 'Campeón':8};
+    matches.sort((a,b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      if (phaseOrder[a.phase] !== phaseOrder[b.phase]) return (phaseOrder[a.phase] || 99) - (phaseOrder[b.phase] || 99);
+      return a.matchIndex - b.matchIndex;
+    });
+
+    let runningPoints = 0;
+    // Map of grouped points
+    const grouped = {};
+
+    matches.forEach(m => {
+      runningPoints += m.pts;
+      
+      let key = '';
+      if (filterType === 'day') {
+        key = m.date; // YYYY-MM-DD
+      } else if (filterType === 'week') {
+        const d = new Date(m.date + "T12:00:00Z"); 
+        const firstDay = new Date("2026-06-08T12:00:00Z"); // Monday June 8, 2026
+        const diffDays = Math.floor((d - firstDay) / (1000 * 60 * 60 * 24));
+        const week = Math.floor(diffDays / 7) + 1;
+        key = `Semana ${week}`;
+      } else if (filterType === 'phase') {
+        key = m.realPhase;
+      } else if (filterType === 'month') {
+        const mm = m.date.split('-')[1];
+        key = mm === '06' ? 'Junio' : 'Julio';
+      }
+      
+      grouped[key] = runningPoints; // Overwrites so we get the LAST points of that group
+    });
+
+    // If it's a day chart and there are gaps, we don't necessarily want gaps in the line, but ApexCharts handles missing dates if we use 'datetime'. 
+    // However, if we group by day, some days might have no matches.
+    // So we should just map keys directly.
+    const data = Object.keys(grouped).map(k => {
+      if (filterType === 'day') {
+        // Convert to timestamp for datetime x-axis
+        return [new Date(k + "T12:00:00Z").getTime(), grouped[k]];
+      } else {
+        return { x: k, y: grouped[k] };
+      }
+    });
+
+    return {
+      name: name,
+      data: data
+    };
+  });
+  
+  // ApexCharts Config
+  const options = {
+    series: series,
+    chart: {
+      type: 'area',
+      height: 350,
+      background: 'transparent',
+      toolbar: { show: false },
+      zoom: { enabled: false },
+      fontFamily: 'Inter, sans-serif'
+    },
+    colors: PARTICIPANTS.map(n => {
+      const c = PARTICIPANT_COLORS[n];
+      if (c === 'hugo') return '#f97316';
+      if (c === 'oscar') return '#60a5fa';
+      if (c === 'camilo') return '#a78bfa';
+      return '#fff';
+    }),
+    fill: {
+      type: 'gradient',
+      gradient: {
+        shadeIntensity: 1,
+        opacityFrom: 0.4,
+        opacityTo: 0.05,
+        stops: [0, 100]
+      }
+    },
+    dataLabels: { enabled: false },
+    stroke: { curve: 'smooth', width: 3 },
+    xaxis: {
+      type: filterType === 'day' ? 'datetime' : 'category',
+      labels: {
+        style: { colors: '#888' },
+        datetimeFormatter: {
+          year: 'yyyy',
+          month: "MMM 'yy",
+          day: 'dd MMM'
+        }
+      },
+      axisBorder: { show: false },
+      axisTicks: { show: false }
+    },
+    yaxis: {
+      labels: { style: { colors: '#888' } }
+    },
+    grid: {
+      borderColor: 'rgba(255,255,255,0.05)',
+      strokeDashArray: 4
+    },
+    theme: { mode: 'dark' },
+    legend: {
+      position: 'top',
+      horizontalAlign: 'left',
+      labels: { colors: '#bbb' }
+    },
+    tooltip: {
+      theme: 'dark',
+      x: { format: 'dd MMM yyyy' }
+    }
+  };
+
+  const container = document.getElementById('timeline-chart-container');
+  if (!container) return; // Might not be rendered yet
+  
+  if (timelineChart) {
+    timelineChart.destroy();
+  }
+  timelineChart = new ApexCharts(container, options);
+  timelineChart.render();
+}
 
 // =====================================================
 // TOAST

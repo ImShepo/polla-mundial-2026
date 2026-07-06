@@ -529,6 +529,80 @@ main {
   color: var(--text2);
   margin-bottom: 16px;
 }
+
+/* Timeline Chart */
+.timeline-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+.timeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.timeline-title {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text2);
+}
+.timeline-filters {
+  display: flex;
+  gap: 6px;
+  background: rgba(0,0,0,0.2);
+  padding: 4px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.05);
+}
+.tl-filter-btn {
+  background: transparent;
+  border: none;
+  color: var(--text3);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.tl-filter-btn:hover {
+  color: var(--text1);
+}
+.tl-filter-btn.active {
+  background: rgba(255,255,255,0.1);
+  color: var(--text1);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+/* ApexCharts custom tooltip */
+.apexcharts-tooltip {
+  background: var(--bg2) !important;
+  border: 1px solid var(--border2) !important;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4) !important;
+  border-radius: 8px !important;
+}
+.apexcharts-tooltip-title {
+  background: rgba(0,0,0,0.3) !important;
+  border-bottom: 1px solid var(--border) !important;
+  font-family: 'Outfit', sans-serif !important;
+  font-weight: 700 !important;
+  color: var(--text) !important;
+  padding: 8px 12px !important;
+}
+.apexcharts-tooltip-text {
+  font-family: 'Inter', sans-serif !important;
+  color: var(--text2) !important;
+}
+.apexcharts-legend-text {
+  color: var(--text2) !important;
+}
 .bs-totals-bars {
   display: flex;
   flex-direction: column;
@@ -2072,10 +2146,20 @@ main {
   /* ── Leaderboard ── */
   .leaderboard-hero { padding: 20px 16px; }
   .leaderboard-hero::before { font-size: 50px; right: 16px; }
-  .podium { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .podium { 
+    display: grid; 
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+  .podium-card { 
+    padding: 14px 8px; 
+  }
+  .podium-card .pm-stage-breakdown,
+  .podium-card .max-pts-bar {
+    display: none;
+  }
   .podium-total { font-size: 24px; }
   .podium-name { font-size: 13px; }
-  .podium-card { padding: 14px 10px; }
   .podium-avatar { width: 40px; height: 40px; font-size: 17px; }
   .stats-grid { grid-template-columns: 1fr 1fr; }
 
@@ -2135,12 +2219,12 @@ main {
   .leaderboard-title { font-size: 11px; }
 
   /* Podium */
-  .podium { gap: 8px; }
-  .podium-card { padding: 12px 8px; }
+  .podium { gap: 6px; }
+  .podium-card { padding: 12px 6px; }
   .podium-avatar { width: 36px; height: 36px; font-size: 15px; }
   .podium-total { font-size: 20px; }
-  .podium-name { font-size: 11px; }
-  .podium-breakdown { font-size: 10px; }
+  .podium-name { font-size: 12px; }
+  .podium-breakdown { font-size: 11px; }
   .pm-stage-pts { font-size: 10px; width: 26px; }
   .pm-stage-icon { font-size: 11px; width: 15px; }
 
