@@ -1855,8 +1855,23 @@ function renderTimelineChart(filterType = 'day') {
       type: 'area',
       height: 350,
       background: 'transparent',
-      toolbar: { show: false },
-      zoom: { enabled: false },
+      toolbar: { 
+        show: true,
+        tools: { 
+          download: false,
+          selection: true,
+          zoom: true,
+          zoomin: true,
+          zoomout: true,
+          pan: true,
+          reset: true
+        },
+        autoSelected: 'pan'
+      },
+      zoom: { 
+        enabled: true,
+        type: 'x'
+      },
       fontFamily: 'Inter, sans-serif'
     },
     colors: PARTICIPANTS.map(n => {
@@ -1877,8 +1892,14 @@ function renderTimelineChart(filterType = 'day') {
     },
     dataLabels: { enabled: false },
     stroke: { curve: 'smooth', width: 3 },
+    markers: {
+      size: 3,
+      strokeWidth: 0,
+      hover: { size: 6 }
+    },
     xaxis: {
       type: filterType === 'day' ? 'datetime' : 'category',
+      range: filterType === 'day' ? 7 * 24 * 60 * 60 * 1000 : undefined,
       labels: {
         style: { colors: '#888' },
         datetimeFormatter: {
