@@ -1208,9 +1208,9 @@ function renderGroups() {
       </div>`;
     }
 
-    // All playoff stages start collapsed except Octavos (most recently completed phase)
+    // All playoff stages start collapsed except Cuartos (most recently completed phase)
     const id = `groups-stage-${cfg.key}`;
-    const collapsed = cfg.key === 'Octavos' ? '' : ' collapsed';
+    const collapsed = cfg.key === 'Cuartos' ? '' : ' collapsed';
     const phaseStatus = getPhaseStatus(cfg.key);
     const phaseBadge = phaseStatus === 'current'
       ? '<span class="detail-phase-badge detail-phase-current">● En curso</span>'
@@ -1477,7 +1477,7 @@ function renderDetailCriteria(data, color) {
       content = parts;
     }
 
-    const startCollapsed = ronda !== 'Octavos';
+    const startCollapsed = ronda !== 'Cuartos';
     html += renderDetailStageBlock(icon, ronda, content, startCollapsed, getPhaseStatus(ronda));
   });
 
@@ -1616,7 +1616,7 @@ function renderDetailMatches(data, color) {
     }
 
     const content = matchTable + advTable;
-    const startCollapsed = ronda !== 'Octavos';
+    const startCollapsed = ronda !== 'Cuartos';
     html += renderDetailStageBlock(icon, ronda, content, startCollapsed, getPhaseStatus(ronda));
   });
 
