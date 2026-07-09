@@ -888,6 +888,8 @@ def get_data():
             'all_thirds': all_thirds,
             'qualified': qualified,
             'tournament_progress': tournament_progress,
+            'eliminated_from_tournament': list(eliminated_from_tournament),
+            'eliminated_from_final': list(eliminated_from_final),
         })
 
     except Exception as e:

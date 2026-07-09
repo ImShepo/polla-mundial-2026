@@ -453,7 +453,10 @@ function renderFuturePredictions() {
     const participantRows = PARTICIPANTS.map(name => {
       const teams = (participants[name]?.future_predictions?.[ronda] || []);
       if (!teams.length) return '';
-      const chips = teams.map(t => `<span class="future-team-chip">${t}</span>`).join('');
+      const chips = teams.map(t => {
+        const isElim = isTeamEliminated(t, ronda);
+        return `<span class="future-team-chip ${isElim ? 'eliminated' : ''}">${t}</span>`;
+      }).join('');
       const color = PARTICIPANT_COLORS[name];
       return `<div class="future-round-participant">
         <span style="color:var(--${color})">${PARTICIPANT_EMOJIS[name]} ${name}</span>
@@ -1252,6 +1255,14 @@ function renderPtsPips(m, played) {
 // =====================================================
 // PLAYOFFS
 // =====================================================
+function isTeamEliminated(teamName, round) {
+  if (!appData.eliminated_from_tournament) return false;
+  const norm = teamName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  if (appData.eliminated_from_tournament.includes(norm)) return true;
+  if ((round === 'Final' || round === 'Campeón') && appData.eliminated_from_final && appData.eliminated_from_final.includes(norm)) return true;
+  return false;
+}
+
 function renderPlayoffs() {
   const grid = document.getElementById('playoffs-grid');
   const real = appData.real_playoffs;
@@ -1271,7 +1282,9 @@ function renderPlayoffs() {
 
       const tags = predichos.map(t => {
         let cls = '';
-        if (!hasReal) cls = '';
+        if (!hasReal) {
+          if (isTeamEliminated(t, round)) cls = 'eliminated';
+        }
         else if (acertados.has(t)) cls = 'hit';
         else cls = 'miss';
         return `<span class="playoff-team-tag ${cls}">${t}</span>`;
@@ -1585,9 +1598,10 @@ function renderDetailMatches(data, color) {
         const isHit       = hasReal && acertadosNorm.has(norm(equipo));
         const isMiss      = hasReal && !isHit;
         const earnedPts   = isHit ? ptsPerHit : 0;
-        const statusIcon  = !hasReal ? '⏳' : (isHit ? '✓' : '✗');
-        const statusColor = !hasReal ? 'var(--text3)' : (isHit ? 'var(--green)' : 'var(--red,#ef4444)');
-        return `<tr class="${isMiss ? 'not-played' : ''}">
+        const isElim      = !hasReal && isTeamEliminated(equipo, ronda);
+        const statusIcon  = !hasReal ? (isElim ? '❌' : '⏳') : (isHit ? '✓' : '✗');
+        const statusColor = !hasReal ? (isElim ? 'var(--red)' : 'var(--text3)') : (isHit ? 'var(--green)' : 'var(--red,#ef4444)');
+        return `<tr class="${isMiss ? 'not-played' : ''} ${isElim ? 'eliminated' : ''}">
           <td style="padding:9px 12px"><span class="partido-num">${i + 1}</span></td>
           <td style="padding:9px 12px;font-size:13px;font-weight:500">${equipo}</td>
           <td style="padding:9px 12px;text-align:center;font-size:16px;color:${statusColor};font-weight:700">${statusIcon}</td>

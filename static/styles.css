@@ -803,6 +803,7 @@ main {
 }
 .match-table tbody tr:hover { background: var(--surface); }
 .match-table tbody tr.not-played { opacity: 0.5; }
+.match-table tbody tr.eliminated { background: rgba(239, 68, 68, 0.1); text-decoration: line-through; opacity: 0.6; }
 .match-table tbody td {
   padding: 12px 12px;
   font-size: 14px;
@@ -921,6 +922,7 @@ main {
 }
 .playoff-team-tag.hit { background: var(--green-dim); border-color: var(--green); color: var(--green); }
 .playoff-team-tag.miss { background: var(--red-dim); border-color: transparent; color: var(--text3); text-decoration: line-through; }
+.playoff-team-tag.eliminated { background: var(--red-dim); border-color: transparent; color: var(--text3); text-decoration: line-through; }
 .playoff-team-tag.real { background: rgba(255,255,255,0.07); border-color: var(--border2); color: var(--text); }
 .playoff-score-row {
   display: flex;
@@ -1473,6 +1475,11 @@ main {
   background: var(--surface2);
   color: var(--text2);
   white-space: nowrap;
+}
+.future-team-chip.eliminated {
+  background: var(--red-dim);
+  color: var(--text3);
+  text-decoration: line-through;
 }
 
 /* ===== MAX POINTS PROJECTION ===== */
