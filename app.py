@@ -699,6 +699,8 @@ def get_data():
                 return True
             if r in ('Final', 'Campeón') and team_n in eliminated_from_final:
                 return True
+            if r == 'Tercero' and team_n in [normalize_name(t) for t in real_playoffs.get('Final', [])]:
+                return True
             return False
 
         # Leer predicciones de partidos de playoff por participante (también por ronda)
@@ -867,13 +869,32 @@ def get_data():
             pending_matches_pts = sum(
                 4 for m in participants_data[name]['group_matches'] if not m['played']
             )
-            # Puntos máximos posibles en playoffs (rondas sin resultado = todos podrían acertar)
-            future_playoff_pts = sum(
-                len(participants_data[name]['future_predictions'].get(ronda, [])) * PLAYOFF_POINTS[ronda]
-                for ronda in PLAYOFF_COLUMNS
+            # Puntos máximos posibles en quiniela de playoffs (partidos pendientes × 4pts max)
+            pending_playoff_match_pts = sum(
+                4 for m in participants_data[name]['playoff_match_details'] if not m['played']
             )
-            participants_data[name]['max_possible_extra'] = pending_matches_pts + future_playoff_pts
-            participants_data[name]['max_total'] = participants_data[name]['grand_total'] + pending_matches_pts + future_playoff_pts
+            
+            # Puntos máximos posibles en playoffs por avance de equipos
+            future_playoff_pts = 0
+            for ronda in PLAYOFF_COLUMNS:
+                teams = participants_data[name]['future_predictions'].get(ronda, [])
+                pts_for_this_round = len(teams) * PLAYOFF_POINTS[ronda]
+                
+                # Deducción por colisiones: si predijo 2 equipos para la Final y se enfrentan en Semifinales, uno no llegará
+                if ronda == 'Final' and len(teams) >= 2:
+                    for rm in real_playoff_matches:
+                        if rm['ronda'] == 'Semifinal':
+                            local = normalize_name(rm['local'])
+                            visitante = normalize_name(rm['visitante'])
+                            # Si ambos equipos de la semifinal están en las predicciones de la final del usuario
+                            teams_norm = [normalize_name(t) for t in teams]
+                            if local in teams_norm and visitante in teams_norm:
+                                pts_for_this_round -= PLAYOFF_POINTS['Final'] # Restamos los puntos de uno que seguro se elimina
+                
+                future_playoff_pts += pts_for_this_round
+
+            participants_data[name]['max_possible_extra'] = pending_matches_pts + pending_playoff_match_pts + future_playoff_pts
+            participants_data[name]['max_total'] = participants_data[name]['grand_total'] + participants_data[name]['max_possible_extra']
 
         return jsonify({
             'participants': participants_data,

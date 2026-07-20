@@ -21,12 +21,13 @@ const PLAYOFF_STAGE_ICONS = {
   'Semifinal':     '⚡',
   'Tercero':       '🥉',
   'Final':         '🏅',
+  'Campeón':       '🏆',
 };
 // Etapas que aparecen en el detalle (todas las rondas excepto Campeón)
 const PLAYOFF_DISPLAY_ROUNDS = ['Dieciseisavos', 'Octavos', 'Cuartos', 'Semifinal', 'Tercero', 'Final'];
 
 let appData = null;
-let currentGroup = 'ALL';
+let currentGroup = 'Semifinal';
 let currentDetailParticipant = 'Hugo';
 let searchQuery = '';
 let _stageId = 0;
@@ -747,7 +748,7 @@ function getPhaseStatus(stageKey) {
   if (stageKey === 'Tercero') {
     const rounds = prog?.real_playoffs_rounds || {};
     if ((rounds['Campeón'] || 0) > 0) return 'past';
-    if ((rounds['Semifinal'] || 0) >= 4) return 'current';
+    if ((rounds['Final'] || 0) >= 2 || (rounds['Tercero'] || 0) >= 2) return 'current';
     return 'future';
   }
   const currentIdx = order.indexOf(currentKey);
@@ -770,7 +771,7 @@ function getStageBreakdown(p) {
   });
 
   // Playoff rounds — filter match details by ronda field (works for all rounds)
-  PLAYOFF_DISPLAY_ROUNDS.forEach(ronda => {
+  PLAYOFF_ROUNDS.forEach(ronda => {
     const rd = p.playoffs?.por_ronda?.[ronda];
     const teamPts = rd?.total_ronda || 0;
     // Match-level pts for this round — filter by ronda field from API
@@ -836,7 +837,7 @@ function renderLeaderboard() {
               <div class="max-pts-track"><div class="max-pts-fill" style="width:${maxPct}%"></div></div>
               <span class="max-pts-value" style="font-size:11px;color:var(--text2)">+${maxExtra} posibles</span>
             </div>`
-          : `<div style="font-size:11px;color:var(--green);margin-top:8px">✅ Puntos finalizados</div>`}
+          : ''}
       </div>`;
   }).join('');
 
@@ -1211,10 +1212,11 @@ function renderGroups() {
       </div>`;
     }
 
-    // All playoff stages start collapsed except Cuartos (most recently completed phase)
+    // Tercero and Final always start expanded; Semifinal also; rest collapsed
     const id = `groups-stage-${cfg.key}`;
-    const collapsed = cfg.key === 'Cuartos' ? '' : ' collapsed';
     const phaseStatus = getPhaseStatus(cfg.key);
+    const collapsed = (cfg.key === 'Tercero' || cfg.key === 'Final') ? '' : ' collapsed';
+
     const phaseBadge = phaseStatus === 'current'
       ? '<span class="detail-phase-badge detail-phase-current">● En curso</span>'
       : phaseStatus === 'past'
@@ -1260,6 +1262,12 @@ function isTeamEliminated(teamName, round) {
   const norm = teamName.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
   if (appData.eliminated_from_tournament.includes(norm)) return true;
   if ((round === 'Final' || round === 'Campeón') && appData.eliminated_from_final && appData.eliminated_from_final.includes(norm)) return true;
+  
+  if (round === 'Tercero' && appData.real_playoffs && appData.real_playoffs['Final']) {
+    const finalTeams = appData.real_playoffs['Final'].map(t => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim());
+    if (finalTeams.includes(norm)) return true;
+  }
+  
   return false;
 }
 
@@ -1490,7 +1498,7 @@ function renderDetailCriteria(data, color) {
       content = parts;
     }
 
-    const startCollapsed = ronda !== 'Cuartos';
+    const startCollapsed = ronda !== 'Tercero' && ronda !== 'Final';
     html += renderDetailStageBlock(icon, ronda, content, startCollapsed, getPhaseStatus(ronda));
   });
 
@@ -1630,7 +1638,7 @@ function renderDetailMatches(data, color) {
     }
 
     const content = matchTable + advTable;
-    const startCollapsed = ronda !== 'Cuartos';
+    const startCollapsed = ronda !== 'Tercero' && ronda !== 'Final';
     html += renderDetailStageBlock(icon, ronda, content, startCollapsed, getPhaseStatus(ronda));
   });
 
